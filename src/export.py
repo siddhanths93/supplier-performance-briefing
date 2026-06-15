@@ -1,6 +1,8 @@
 from io import BytesIO
 
 import pandas as pd
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 
 def create_supplier_briefing_export(
@@ -231,6 +233,119 @@ def create_methodology_export() -> pd.DataFrame:
     return pd.DataFrame(methodology_rows)
 
 
+def format_excel_worksheet(
+        worksheet,
+        dataframe: pd.DataFrame,
+) -> None:
+    """
+    Apply basic professional formatting to an Excel worksheet.
+    """
+    header_fill = PatternFill(
+        fill_type="solid",
+        fgColor="1F4E78",
+    )
+
+    header_font = Font(
+        bold=True,
+        color="FFFFFF",
+    )
+
+    header_alignment = Alignment(
+        horizontal="center",
+        vertical="center",
+        wrap_text=True,
+    )
+
+    body_alignment = Alignment(
+        vertical="top",
+        wrap_text=True,
+    )
+
+    worksheet.freeze_panes = "A2"
+
+    for cell in worksheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_alignment
+
+    for row in worksheet.iter_rows(
+            min_row=2,
+            max_row=worksheet.max_row,
+    ):
+        for cell in row:
+            cell.alignment = body_alignment
+
+    for column_index, column_name in enumerate(
+            dataframe.columns,
+            start=1,
+    ):
+        column_letter = get_column_letter(
+            column_index
+        )
+
+        if column_name in [
+            "Observation",
+            "Implication",
+            "Suggested Next Step",
+            "Description",
+        ]:
+            worksheet.column_dimensions[
+                column_letter
+            ].width = 55
+
+        elif "%" in column_name:
+            worksheet.column_dimensions[
+                column_letter
+            ].width = 18
+
+        elif "Share" in column_name:
+            worksheet.column_dimensions[
+                column_letter
+            ].width = 18
+
+        elif "Score" in column_name:
+            worksheet.column_dimensions[
+                column_letter
+            ].width = 18
+
+        elif "Spend" in column_name:
+            worksheet.column_dimensions[
+                column_letter
+            ].width = 18
+
+        else:
+            worksheet.column_dimensions[
+                column_letter
+            ].width = 22
+
+    for row in worksheet.iter_rows(
+            min_row=2,
+            max_row=worksheet.max_row,
+    ):
+        for cell in row:
+            header_value = worksheet.cell(
+                row=1,
+                column=cell.column,
+            ).value
+
+            if header_value is None:
+                continue
+
+            header_text = str(header_value)
+
+            if "%" in header_text:
+                cell.number_format = '0.0'
+
+            elif "Share" in header_text:
+                cell.number_format = '0.0'
+
+            elif "Score" in header_text:
+                cell.number_format = '0.0'
+
+            elif "Spend" in header_text:
+                cell.number_format = '$#,##0'
+
+
 def create_excel_briefing_workbook(
     supplier_findings: pd.DataFrame,
     category_findings: pd.DataFrame,
@@ -286,7 +401,7 @@ def create_excel_briefing_workbook(
 
         top_supplier_scores_export.to_excel(
             writer,
-            sheet_name="Top Supplier Scores",
+            sheet_name="Top 25 Supplier Scores",
             index=False,
         )
 
@@ -301,6 +416,26 @@ def create_excel_briefing_workbook(
             sheet_name="Methodology",
             index=False,
         )
+
+        workbook = writer.book
+
+        worksheet_dataframes = {
+            "Supplier Findings": supplier_findings_export,
+            "Category Findings": category_findings_export,
+            "Top 25 Supplier Scores": top_supplier_scores_export,
+            "Category Metrics": category_metrics_export,
+            "Methodology": methodology_export,
+        }
+
+        for sheet_name, dataframe in (
+            worksheet_dataframes.items()
+        ):
+            worksheet = workbook[sheet_name]
+
+            format_excel_worksheet(
+                worksheet,
+                dataframe,
+            )
 
     output.seek(0)
 
