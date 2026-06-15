@@ -25,6 +25,13 @@ from src.scoring import (
     add_supplier_attention_scores,
 )
 
+from src.recommendations import (
+    create_category_findings,
+    create_supplier_findings,
+)
+
+
+
 def main() -> None:
     """
     Load and validate the synthetic supplier dataset.
@@ -58,6 +65,16 @@ def main() -> None:
     category_metrics = calculate_category_metrics(
         supplier_data
     )
+
+    supplier_findings = create_supplier_findings(
+        supplier_data,
+        top_n=10,
+    )
+
+    category_findings = create_category_findings(
+        category_metrics
+    )
+
     missing_columns = validate_required_columns(supplier_data)
 
     data_quality_summary = create_data_quality_summary(
@@ -223,6 +240,42 @@ def main() -> None:
         .head(10)
         .to_string(index=False)
     )
+
+    print("\nEvidence-backed supplier findings")
+    print("--------------------------------")
+
+    for _, finding in supplier_findings.head(5).iterrows():
+        print(f"\nSupplier: {finding['supplier_name']}")
+        print(f"Attention level: {finding['attention_level']}")
+        print(
+            f"Attention score: "
+            f"{finding['supplier_attention_score']}"
+        )
+        print(
+            f"Data confidence: "
+            f"{finding['data_confidence_pct']}%"
+        )
+        print(f"Observation: {finding['observation']}")
+        print(f"Implication: {finding['implication']}")
+        print(
+            f"Suggested action: "
+            f"{finding['suggested_next_step']}"
+        )
+
+    print("\nEvidence-backed category findings")
+    print("--------------------------------")
+
+    if category_findings.empty:
+        print("No category review findings were triggered.")
+    else:
+        for _, finding in category_findings.iterrows():
+            print(f"\nCategory: {finding['category']}")
+            print(f"Observation: {finding['observation']}")
+            print(f"Implication: {finding['implication']}")
+            print(
+                f"Suggested action: "
+                f"{finding['suggested_next_step']}"
+            )
 
 if __name__ == "__main__":
     main()
