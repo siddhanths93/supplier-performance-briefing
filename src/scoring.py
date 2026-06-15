@@ -84,10 +84,14 @@ def calculate_delivery_risk_score(
     Score delivery risk.
 
     More negative OTD change means greater deterioration and risk.
+    Missing or invalid values remain missing.
     """
-    delivery_deterioration = (
-        -data["otd_change_pct_points"]
+    otd_change = pd.to_numeric(
+        data["otd_change_pct_points"],
+        errors="coerce",
     )
+
+    delivery_deterioration = -otd_change
 
     delivery_deterioration = (
         delivery_deterioration.clip(lower=0)
@@ -97,7 +101,6 @@ def calculate_delivery_risk_score(
         delivery_deterioration
     )
 
-
 def calculate_quality_risk_score(
     data: pd.DataFrame,
 ) -> pd.Series:
@@ -105,16 +108,20 @@ def calculate_quality_risk_score(
     Score quality risk.
 
     A larger increase in defect rate produces a higher score.
+    Missing or invalid values remain missing.
     """
+    defect_rate_change = pd.to_numeric(
+        data["defect_rate_change_pct_points"],
+        errors="coerce",
+    )
+
     quality_deterioration = (
-        data["defect_rate_change_pct_points"]
-        .clip(lower=0)
+        defect_rate_change.clip(lower=0)
     )
 
     return min_max_scale(
         quality_deterioration
     )
-
 
 def calculate_criticality_score(
     data: pd.DataFrame,
