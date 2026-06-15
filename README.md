@@ -21,6 +21,21 @@ The tool produces a management-attention list, evidence-backed supplier findings
 
 ## Key Features
 
+## Screenshots
+
+### Executive Overview
+
+![Executive Overview](assets/screenshots/executive_overview.png)
+
+### Supplier Attention View
+
+![Supplier Attention](assets/screenshots/supplier_attention.png)
+
+### Management Findings
+
+![Management Findings](assets/screenshots/management_findings.png)
+
+
 ### Supplier Attention Scoring
 
 The app calculates an illustrative supplier attention score using:
@@ -201,6 +216,12 @@ Potential future improvements include:
 * automated PowerPoint briefing export
 * optional LLM-generated executive summary based only on calculated findings
 * deployment on Streamlit Community Cloud
+
+## Portfolio Summary
+
+This project demonstrates my ability to combine procurement domain expertise with applied analytics and software development. The app turns supplier spend and performance data into a management-ready briefing workflow, including data validation, transparent scoring, category concentration analysis, interactive dashboarding, and exportable executive deliverables.
+
+The project is intentionally rules-based and explainable. Rather than relying on a black-box model, the app uses clear logic to generate review hypotheses that a procurement, sourcing, or supply chain team could investigate further.
 
 ## Portfolio Context
 
