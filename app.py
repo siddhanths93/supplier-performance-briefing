@@ -467,6 +467,154 @@ def display_category_findings(
             )
 
 
+def display_methodology() -> None:
+    """
+    Display the methodology and limitations used by the app.
+    """
+    st.subheader("Purpose")
+
+    st.write(
+        "This tool identifies supplier relationships and categories "
+        "that may deserve management review based on spend exposure, "
+        "supplier performance movement, category concentration, and "
+        "data completeness."
+    )
+
+    st.subheader("Supplier attention score")
+
+    st.write(
+        "The supplier attention score is an illustrative, rules-based "
+        "prioritization score. It is designed to help users decide where "
+        "to investigate further, not to make final sourcing decisions."
+    )
+
+    methodology_table = pd.DataFrame(
+        [
+            {
+                "Component": "Spend exposure",
+                "Weight": "30%",
+                "Meaning": (
+                    "Higher category spend share means greater supplier "
+                    "dependency or financial exposure."
+                ),
+            },
+            {
+                "Component": "Delivery risk",
+                "Weight": "25%",
+                "Meaning": (
+                    "Suppliers with larger declines in on-time delivery "
+                    "receive higher delivery risk scores."
+                ),
+            },
+            {
+                "Component": "Quality risk",
+                "Weight": "25%",
+                "Meaning": (
+                    "Suppliers with larger increases in defect rate "
+                    "receive higher quality risk scores."
+                ),
+            },
+            {
+                "Component": "Criticality",
+                "Weight": "20%",
+                "Meaning": (
+                    "High-criticality suppliers receive higher scores "
+                    "because performance issues may have greater "
+                    "operational impact."
+                ),
+            },
+        ]
+    )
+
+    st.dataframe(
+        methodology_table,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Data confidence")
+
+    st.write(
+        "Data confidence measures how many scoring inputs are available "
+        "for each supplier. Missing delivery, quality, spend, or criticality "
+        "inputs reduce confidence."
+    )
+
+    st.info(
+        "Missing data does not automatically increase supplier risk. "
+        "Instead, the tool calculates the score from available evidence "
+        "and separately reports data confidence."
+    )
+
+    st.subheader("Category concentration logic")
+
+    st.write(
+        "Category concentration and fragmentation are evaluated using "
+        "transparent metrics such as top-supplier share, top-three supplier "
+        "share, suppliers required to reach 80% of category spend, HHI, "
+        "and tail-supplier share."
+    )
+
+    category_methodology_table = pd.DataFrame(
+        [
+            {
+                "Metric": "Top supplier share",
+                "Meaning": (
+                    "The largest supplier's share of total category spend."
+                ),
+            },
+            {
+                "Metric": "Top 3 supplier share",
+                "Meaning": (
+                    "The combined share of the three largest suppliers "
+                    "in the category."
+                ),
+            },
+            {
+                "Metric": "Suppliers to 80% spend",
+                "Meaning": (
+                    "The number of suppliers required to reach 80% of "
+                    "category spend."
+                ),
+            },
+            {
+                "Metric": "HHI",
+                "Meaning": (
+                    "A concentration index calculated from squared supplier "
+                    "spend shares. Higher values indicate more concentration."
+                ),
+            },
+            {
+                "Metric": "Tail supplier share",
+                "Meaning": (
+                    "The percentage of suppliers below the current low-spend "
+                    "threshold."
+                ),
+            },
+        ]
+    )
+
+    st.dataframe(
+        category_methodology_table,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Important limitations")
+
+    st.warning(
+        "The findings are review hypotheses. They are not final sourcing "
+        "decisions, guaranteed savings estimates, supplier termination "
+        "recommendations, or industry-standard supplier risk ratings."
+    )
+
+    st.write(
+        "This independent project uses synthetic sample data and an "
+        "original illustrative scoring framework. It does not use employer, "
+        "client, confidential, or proprietary data."
+    )
+
+
 def main() -> None:
     """
     Run the local Streamlit application.
@@ -588,11 +736,12 @@ def main() -> None:
         filtered_category_metrics
     )
 
-    overview_tab, supplier_tab, findings_tab = st.tabs(
+    overview_tab, supplier_tab, findings_tab, methodology_tab = st.tabs(
         [
             "Executive Overview",
             "Supplier Attention",
             "Management Findings",
+            "Methodology",
         ]
     )
 
@@ -781,6 +930,8 @@ def main() -> None:
             ),
         )
 
+    with methodology_tab:
+        display_methodology()
 
 if __name__ == "__main__":
     main()
