@@ -16,6 +16,10 @@ from src.cleaning import clean_supplier_data
 
 from src.supplier_metrics import calculate_supplier_metrics
 
+from src.category_metrics import (
+    calculate_category_metrics,
+)
+
 def main() -> None:
     """
     Load and validate the synthetic supplier dataset.
@@ -43,6 +47,9 @@ def main() -> None:
         supplier_data
     )
 
+    category_metrics = calculate_category_metrics(
+        supplier_data
+    )
     missing_columns = validate_required_columns(supplier_data)
 
     data_quality_summary = create_data_quality_summary(
@@ -134,6 +141,33 @@ def main() -> None:
             ascending=False,
         )
         .head(10)
+        .to_string(index=False)
+    )
+
+    print("\nCategory concentration and fragmentation")
+    print("----------------------------------------")
+
+    category_columns = [
+        "category",
+        "total_category_spend",
+        "supplier_count",
+        "top_supplier_share_pct",
+        "top_3_supplier_share_pct",
+        "suppliers_to_80_pct_spend",
+        "tail_supplier_pct",
+        "tail_spend_pct",
+        "hhi",
+        "concentration_risk_flag",
+        "fragmentation_review_flag",
+        "tail_spend_review_flag",
+    ]
+
+    print(
+        category_metrics[category_columns]
+        .sort_values(
+            by="total_category_spend",
+            ascending=False,
+        )
         .to_string(index=False)
     )
 
