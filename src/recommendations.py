@@ -141,8 +141,7 @@ def create_supplier_finding(
     )
 
     next_step_text = (
-        "Suggested next step: "
-        + "; ".join(dict.fromkeys(next_steps))
+        "; ".join(dict.fromkeys(next_steps))
         + "."
     )
 
@@ -264,8 +263,7 @@ def create_category_findings(
                     + "."
                 ),
                 "suggested_next_step": (
-                    "Suggested next step: "
-                    + "; ".join(
+                    "; ".join(
                         dict.fromkeys(next_steps)
                     )
                     + "."

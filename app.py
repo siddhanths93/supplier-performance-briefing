@@ -22,6 +22,10 @@ from src.scoring import add_supplier_attention_scores
 from src.supplier_metrics import calculate_supplier_metrics
 from src.validation import create_data_quality_summary
 
+from src.export import (
+    create_category_briefing_export,
+    create_supplier_briefing_export,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -144,11 +148,11 @@ def display_executive_overview(
     )
 
 
-def display_supplier_attention_table(
-    supplier_data: pd.DataFrame,
-) -> None:
+def format_supplier_table(
+        supplier_data: pd.DataFrame,
+) -> pd.DataFrame:
     """
-    Display the top-ranked supplier attention list.
+    Create a presentation-friendly supplier attention table.
     """
     attention_columns = [
         "supplier_name",
@@ -174,17 +178,48 @@ def display_supplier_attention_table(
         .copy()
     )
 
+    attention_table["annual_spend"] = (
+        attention_table["annual_spend"]
+        .map(lambda value: f"${value:,.0f}")
+    )
+
+    percentage_columns = [
+        "category_spend_share_pct",
+        "on_time_delivery_pct",
+        "otd_change_pct_points",
+        "defect_rate_pct",
+        "defect_rate_change_pct_points",
+        "data_confidence_pct",
+    ]
+
+    for column in percentage_columns:
+        attention_table[column] = (
+            attention_table[column]
+            .map(
+                lambda value: (
+                    ""
+                    if pd.isna(value)
+                    else f"{value:.1f}%"
+                )
+            )
+        )
+
+    attention_table["supplier_attention_score"] = (
+        attention_table["supplier_attention_score"]
+        .map(lambda value: f"{value:.1f}")
+    )
+
     attention_table = attention_table.rename(
         columns={
             "supplier_name": "Supplier",
             "category": "Category",
             "annual_spend": "Annual Spend",
             "category_spend_share_pct": (
-                "Category Spend Share %"
+                "Category Spend Share"
             ),
-            "on_time_delivery_pct": "OTD %",
+            "on_time_delivery_pct": "OTD",
             "otd_change_pct_points": "OTD Change",
-            "defect_rate_pct": "Defect Rate %",
+            "defect_rate_pct": "Defect Rate",
             "defect_rate_change_pct_points": (
                 "Defect Rate Change"
             ),
@@ -192,10 +227,20 @@ def display_supplier_attention_table(
                 "Attention Score"
             ),
             "attention_level": "Attention Level",
-            "data_confidence_pct": (
-                "Data Confidence %"
-            ),
+            "data_confidence_pct": "Data Confidence",
         }
+    )
+
+    return attention_table
+
+def display_supplier_attention_table(
+    supplier_data: pd.DataFrame,
+) -> None:
+    """
+    Display the top-ranked supplier attention list.
+    """
+    attention_table = format_supplier_table(
+        supplier_data
     )
 
     st.dataframe(
@@ -203,6 +248,148 @@ def display_supplier_attention_table(
         use_container_width=True,
         hide_index=True,
     )
+
+def display_supplier_detail(
+    supplier_data: pd.DataFrame,
+) -> None:
+    """
+    Display a detail panel for one selected supplier.
+    """
+    if supplier_data.empty:
+        st.info(
+            "No supplier is available for detail review."
+        )
+        return
+
+    supplier_options = (
+        supplier_data.sort_values(
+            by="supplier_attention_score",
+            ascending=False,
+        )["supplier_name"]
+        .tolist()
+    )
+
+    selected_supplier = st.selectbox(
+        "Select a supplier to review",
+        options=supplier_options,
+    )
+
+    supplier_row = supplier_data[
+        supplier_data["supplier_name"]
+        == selected_supplier
+    ].iloc[0]
+
+    st.markdown(
+        f"### {supplier_row['supplier_name']}"
+    )
+
+    detail_columns = st.columns(4)
+
+    detail_columns[0].metric(
+        "Annual Spend",
+        f"${supplier_row['annual_spend']:,.0f}",
+    )
+
+    detail_columns[1].metric(
+        "Attention Score",
+        f"{supplier_row['supplier_attention_score']:.1f}",
+    )
+
+    detail_columns[2].metric(
+        "Attention Level",
+        supplier_row["attention_level"],
+    )
+
+    detail_columns[3].metric(
+        "Data Confidence",
+        f"{supplier_row['data_confidence_pct']:.1f}%",
+    )
+
+    st.write("**Category:**", supplier_row["category"])
+    st.write(
+        "**Supplier criticality:**",
+        supplier_row["supplier_criticality"],
+    )
+
+    st.write("### Performance movement")
+
+    performance_columns = st.columns(4)
+
+    performance_columns[0].metric(
+        "Current OTD",
+        (
+            ""
+            if pd.isna(
+                supplier_row["on_time_delivery_pct"]
+            )
+            else f"{supplier_row['on_time_delivery_pct']:.1f}%"
+        ),
+    )
+
+    performance_columns[1].metric(
+        "OTD Change",
+        (
+            ""
+            if pd.isna(
+                supplier_row["otd_change_pct_points"]
+            )
+            else f"{supplier_row['otd_change_pct_points']:.1f}%"
+        ),
+    )
+
+    performance_columns[2].metric(
+        "Current Defect Rate",
+        (
+            ""
+            if pd.isna(
+                supplier_row["defect_rate_pct"]
+            )
+            else f"{supplier_row['defect_rate_pct']:.1f}%"
+        ),
+    )
+
+    performance_columns[3].metric(
+        "Defect Rate Change",
+        (
+            ""
+            if pd.isna(
+                supplier_row[
+                    "defect_rate_change_pct_points"
+                ]
+            )
+            else (
+                f"{supplier_row['defect_rate_change_pct_points']:.1f}%"
+            )
+        ),
+    )
+
+    finding = create_supplier_findings(
+        supplier_data[
+            supplier_data["supplier_name"]
+            == selected_supplier
+        ],
+        top_n=1,
+    )
+
+    if not finding.empty:
+        finding_row = finding.iloc[0]
+
+        st.write("### Evidence-backed finding")
+
+        st.write(
+            f"**Observation:** "
+            f"{finding_row['observation']}"
+        )
+
+        st.write(
+            f"**Implication:** "
+            f"{finding_row['implication']}"
+        )
+
+        st.write(
+            f"**Suggested next step:** "
+            f"{finding_row['suggested_next_step']}"
+        )
 
 
 def display_supplier_findings(
@@ -512,13 +699,16 @@ def main() -> None:
                 f"filtered suppliers."
             )
 
-            display_supplier_attention_table(
+            st.subheader("Supplier detail")
+
+            display_supplier_detail(
                 filtered_supplier_data
             )
 
             st.subheader(
                 "Supplier spend and attention positioning"
             )
+
 
             supplier_scatter = create_supplier_risk_scatter(
                 filtered_supplier_data
@@ -536,11 +726,35 @@ def main() -> None:
             filtered_supplier_findings
         )
 
+        supplier_export = create_supplier_briefing_export(
+            filtered_supplier_findings
+        )
+
+        if not supplier_export.empty:
+            st.download_button(
+                label="Download supplier briefing CSV",
+                data=supplier_export.to_csv(index=False),
+                file_name="supplier_briefing.csv",
+                mime="text/csv",
+            )
+
         st.subheader("Category findings")
 
         display_category_findings(
             filtered_category_findings
         )
+
+        category_export = create_category_briefing_export(
+            filtered_category_findings
+        )
+
+        if not category_export.empty:
+            st.download_button(
+                label="Download category briefing CSV",
+                data=category_export.to_csv(index=False),
+                file_name="category_briefing.csv",
+                mime="text/csv",
+            )
 
 
 if __name__ == "__main__":
