@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from src.ingestion import (
+    add_internal_supplier_id,
     load_supplier_data,
     summarize_dataset,
     validate_required_columns,
@@ -21,6 +22,10 @@ def main() -> None:
     )
 
     supplier_data = load_supplier_data(sample_file)
+
+    supplier_data = add_internal_supplier_id(
+        supplier_data
+    )
 
     missing_columns = validate_required_columns(supplier_data)
 

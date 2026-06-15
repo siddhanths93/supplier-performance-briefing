@@ -6,7 +6,6 @@ import pandas as pd
 SUPPORTED_FILE_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 
 REQUIRED_COLUMNS = {
-    "supplier_id",
     "supplier_name",
     "category",
     "annual_spend",
@@ -95,3 +94,24 @@ def summarize_dataset(data: pd.DataFrame) -> dict[str, int]:
         "suppliers": data["supplier_id"].nunique(),
         "categories": data["category"].nunique(),
     }
+
+def add_internal_supplier_id(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add an internal supplier ID when the source file does not contain one.
+
+    The generated ID is used only inside the application and should not
+    be interpreted as the supplier's actual ERP or vendor-master ID.
+    """
+    data = data.copy()
+
+    if "supplier_id" not in data.columns:
+        data.insert(
+            0,
+            "supplier_id",
+            [
+                f"SUP-{number:04d}"
+                for number in range(1, len(data) + 1)
+            ],
+        )
+
+    return data
