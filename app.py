@@ -14,6 +14,8 @@ from src.validation import (
 
 from src.cleaning import clean_supplier_data
 
+from src.supplier_metrics import calculate_supplier_metrics
+
 def main() -> None:
     """
     Load and validate the synthetic supplier dataset.
@@ -34,6 +36,10 @@ def main() -> None:
     )
 
     supplier_data = add_internal_supplier_id(
+        supplier_data
+    )
+
+    supplier_data = calculate_supplier_metrics(
         supplier_data
     )
 
@@ -105,6 +111,31 @@ def main() -> None:
             )
         )
 
+    print("\nSupplier metrics sample")
+    print("-----------------------")
+
+    metric_columns = [
+        "supplier_name",
+        "category",
+        "annual_spend",
+        "spend_change_pct",
+        "category_spend_share_pct",
+        "otd_change_pct_points",
+        "defect_rate_change_pct_points",
+        "delivery_deterioration_flag",
+        "quality_deterioration_flag",
+        "high_spend_exposure_flag",
+    ]
+
+    print(
+        supplier_data[metric_columns]
+        .sort_values(
+            by="annual_spend",
+            ascending=False,
+        )
+        .head(10)
+        .to_string(index=False)
+    )
 
 if __name__ == "__main__":
     main()
