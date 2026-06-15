@@ -1,0 +1,151 @@
+supplier_id,supplier_name,category,region,annual_spend,prior_year_spend,on_time_delivery_pct,prior_year_otd_pct,defect_rate_pct,prior_year_defect_rate_pct,lead_time_days,contract_status,supplier_criticality
+SUP-0001,Apex Solutions 001,Marketing,North America,472588.46,662083.26,97.7,98.7,1.2,0.1,17,Active,Low
+SUP-0002,BlueRiver Industries 002,Professional Services,Latin America,190431.64,174862.06,93.3,86.2,1.7,2.9,17,Under Review,Low
+SUP-0003,Global Systems LLC,Maintenance,Latin America,138879.95,103570.41,90.2,92.3,0.7,0.8,17,Active,Medium
+SUP-0004,Pioneer Packaging Group,Packaging,North America,1100000.0,76637.0,97.0,86.0,1.1,4.5,15,Active,High
+SUP-0005,Evergreen Partners 005,IT Services,Asia Pacific,30494.97,25723.54,100.0,100.0,0.7,0.8,47,Active,Low
+SUP-0006,"GLOBAL SYSTEMS, L.L.C.",Temporary Labor,Asia Pacific,100076.69,103079.88,100.0,100.0,2.6,3.0,27,Active,Low
+SUP-0007,Global Enterprises 007,Marketing,North America,154232.65,151362.57,91.4,88.9,3.9,3.7,33,Active,Medium
+SUP-0008,Horizon Technologies 008,Marketing,Latin America,953533.57,1134513.06,92.0,94.1,2.8,4.0,19,Active,Low
+SUP-0009,Global System LLC,Logistics,Latin America,4200000.0,3900000.0,81.0,94.0,4.8,2.1,22,Active,High
+SUP-0010,Keystone Holdings 010,Professional Services,Asia Pacific,434842.65,344018.9,85.9,87.7,1.8,2.7,17,Active,Low
+SUP-0011,Metro Facility Services,Facilities,Asia Pacific,1750000.0,87044.89,88.0,91.0,7.2,2.4,2,Active,High
+SUP-0012,Metro Industries 012,Temporary Labor,Europe,49764.45,37087.39,90.8,93.0,5.0,5.0,10,Active,Medium
+SUP-0013,NorthStar Group 013,Office Supplies,Latin America,61999.6,49921.81,,,2.0,1.2,6,Active,High
+SUP-0014,Optima Services 014,Maintenance,Europe,78808.33,71060.23,86.0,86.9,1.7,2.0,2,Expired,Medium
+SUP-0015,Pioneer Partners 015,Professional Services,Latin America,1367465.7,1017529.09,81.5,75.8,0.6,1.8,12,Active,Medium
+SUP-0016,Apex Systems 016,Facilities,North America,71583.03,64546.28,78.6,80.3,1.7,1.7,37,Expired,High
+SUP-0017,BlueRiver Enterprises 017,Office Supplies,North America,90000.0,319269.37,84.3,81.1,1.6,1.4,24,Active,Medium
+SUP-0018,ClearPoint Technologies 018,IT Services,Latin America,65977.75,67557.43,88.2,83.1,5.2,4.3,37,Under Review,Medium
+SUP-0019,Delta Supply 019,Maintenance,Europe,413152.9,396508.18,89.2,92.1,1.7,1.5,28,Active,High
+SUP-0020,Evergreen Holdings 020,Office Supplies,Europe,90000.0,264438.52,100.0,100.0,1.7,0.5,32,No Contract,Low
+SUP-0021,Fusion Solutions 021,Marketing,Latin America,139157.56,115184.73,97.6,95.2,0.6,0.0,15,Active,Medium
+SUP-0022,Global Industries 022,Facilities,North America,156253.89,191041.53,85.2,91.0,,,29,Active,Medium
+SUP-0023,Horizon Group 023,Temporary Labor,Asia Pacific,84559.64,72222.39,93.1,91.3,2.4,3.5,31,No Contract,Low
+SUP-0024,Ironwood Services 024,Maintenance,Europe,254249.72,255352.12,88.6,88.7,0.3,2.5,18,Expired,Medium
+SUP-0025,Keystone Partners 025,Marketing,North America,103261.15,83219.79,89.3,90.4,3.3,2.8,30,No Contract,Low
+SUP-0026,Lighthouse Systems 026,Logistics,Latin America,47781.52,41008.67,92.1,89.6,3.4,4.5,30,Active,Low
+SUP-0027,Metro Enterprises 027,Professional Services,North America,45345.33,33398.23,94.7,96.6,0.8,1.0,19,Expired,Medium
+SUP-0028,NorthStar Technologies 028,IT Services,North America,193413.94,166515.17,89.0,86.8,2.2,2.0,13,No Contract,Low
+SUP-0029,Optima Supply 029,Logistics,Asia Pacific,789449.59,1056780.42,97.4,95.7,3.9,4.3,12,Expired,Medium
+SUP-0030,Pioneer Holdings 030,Packaging,Latin America,190992.92,187625.34,84.1,89.6,1.5,1.6,25,Active,High
+SUP-0031,Apex Solutions 031,Marketing,North America,144547.24,176484.02,91.0,86.9,1.3,1.4,27,Expired,High
+SUP-0032,BlueRiver Industries 032,Temporary Labor,Asia Pacific,216604.01,231239.23,100.0,96.9,1.4,1.1,16,Expired,Low
+SUP-0033,ClearPoint Group 033,Facilities,Asia Pacific,600790.6,461429.23,92.3,98.8,2.0,0.9,24,Under Review,Low
+SUP-0034,Delta Services 034,Facilities,Latin America,202679.77,177050.61,99.6,100.0,1.0,0.0,30,Active,Low
+SUP-0035,Evergreen Partners 035,Professional Services,North America,107912.15,119346.43,91.5,89.9,1.2,1.7,30,Active,Low
+SUP-0036,Fusion Systems 036,Logistics,Latin America,492026.92,580541.59,94.5,86.7,2.0,1.8,40,No Contract,High
+SUP-0037,Global Enterprises 037,Logistics,Asia Pacific,249885.09,241224.92,90.7,89.4,1.1,0.6,37,Active,Medium
+SUP-0038,Horizon Technologies 038,Professional Services,Latin America,755969.26,932122.55,,,0.6,0.6,14,No Contract,Low
+SUP-0039,Ironwood Supply 039,Facilities,Europe,195484.12,215007.97,86.3,85.6,0.2,0.9,41,Active,High
+SUP-0040,Keystone Holdings 040,Packaging,Latin America,47835.87,44041.2,93.6,89.1,1.7,1.9,19,Active,Low
+SUP-0041,Lighthouse Solutions 041,Professional Services,Asia Pacific,41433.33,33469.14,85.9,88.2,3.8,3.3,34,No Contract,Low
+SUP-0042,Metro Industries 042,Maintenance,North America,848247.67,744353.05,95.0,97.1,2.2,3.2,25,Active,Low
+SUP-0043,NorthStar Group 043,Packaging,Latin America,912246.69,1477160.17,97.5,91.5,0.6,1.9,20,Active,Medium
+SUP-0044,Optima Services 044,Facilities,Latin America,136009.6,125379.2,93.2,96.0,0.9,1.3,6,Expired,Medium
+SUP-0045,Pioneer Partners 045,Maintenance,Europe,110947.53,106376.94,89.3,97.5,1.3,2.1,22,No Contract,Low
+SUP-0046,Apex Systems 046,Marketing,Asia Pacific,701828.46,635426.26,93.7,94.4,5.3,6.3,8,No Contract,High
+SUP-0047,BlueRiver Enterprises 047,Professional Services,Europe,53796.0,40726.23,89.1,87.8,5.5,6.4,34,Active,High
+SUP-0048,ClearPoint Technologies 048,Facilities,Asia Pacific,66521.0,101001.02,96.6,96.0,5.1,5.6,39,Active,High
+SUP-0049,Delta Supply 049,Packaging,Latin America,309689.91,335306.9,80.0,82.5,1.8,2.3,16,Under Review,Low
+SUP-0050,Evergreen Holdings 050,Logistics,Latin America,109687.96,96525.45,89.0,82.1,10.1,10.5,27,Active,Low
+SUP-0051,Fusion Solutions 051,Logistics,North America,161923.31,217255.45,79.1,79.7,0.9,0.0,17,Active,High
+SUP-0052,Global Industries 052,IT Hardware,Latin America,5000000.0,106673.55,82.0,80.5,1.2,1.8,18,Active,Low
+SUP-0053,Horizon Group 053,Marketing,Europe,228108.02,208070.0,99.2,100.0,3.1,2.1,32,Active,Medium
+SUP-0054,Ironwood Services 054,Packaging,Asia Pacific,664959.8,562388.5,96.4,95.7,2.1,1.4,24,No Contract,Medium
+SUP-0055,Keystone Partners 055,Packaging,Latin America,178186.3,192170.52,86.7,93.4,2.1,3.2,41,No Contract,Low
+SUP-0056,Lighthouse Systems 056,Marketing,Europe,309879.5,263396.04,82.0,77.6,0.7,1.4,19,No Contract,Medium
+SUP-0057,Metro Enterprises 057,Professional Services,Europe,20948.62,17138.34,73.2,75.6,1.6,2.8,34,Active,High
+SUP-0058,NorthStar Technologies 058,Office Supplies,Europe,90000.0,144615.24,87.7,89.0,0.9,0.7,25,Active,Medium
+SUP-0059,Optima Supply 059,Logistics,Latin America,70036.35,65320.71,100.0,100.0,0.5,0.0,32,Active,Medium
+SUP-0060,Pioneer Holdings 060,IT Services,Europe,48107.19,44598.96,93.6,94.3,1.0,0.8,20,Active,High
+SUP-0061,Apex Solutions 061,Packaging,Europe,67632.75,77330.11,87.6,92.5,2.1,2.1,24,Active,Medium
+SUP-0062,BlueRiver Industries 062,Professional Services,Europe,116526.8,116126.76,93.8,92.5,2.8,2.9,23,Active,Medium
+SUP-0063,ClearPoint Group 063,Office Supplies,North America,90000.0,405696.18,81.6,74.9,0.2,1.1,16,Active,High
+SUP-0064,Delta Services 064,Marketing,Europe,43200.5,39308.52,89.2,89.1,1.7,1.4,31,Active,Medium
+SUP-0065,Evergreen Partners 065,Office Supplies,North America,90000.0,138695.65,91.6,88.0,,,31,No Contract,Low
+SUP-0066,Fusion Systems 066,Office Supplies,North America,90000.0,119470.27,90.5,89.1,2.0,1.2,30,Active,Low
+SUP-0067,Global Enterprises 067,Office Supplies,Asia Pacific,90000.0,116408.0,95.7,95.4,0.6,1.0,39,Active,Low
+SUP-0068,Horizon Technologies 068,Facilities,North America,443635.17,342136.33,93.1,86.2,0.6,0.6,38,No Contract,Medium
+SUP-0069,Ironwood Supply 069,IT Hardware,Asia Pacific,2500000.0,311065.35,95.0,88.5,3.8,3.2,20,No Contract,Medium
+SUP-0070,Keystone Holdings 070,Professional Services,Latin America,619952.48,702897.95,86.9,88.8,0.8,0.6,28,No Contract,Medium
+SUP-0071,Lighthouse Solutions 071,Logistics,Asia Pacific,139454.59,130769.52,96.4,94.3,1.2,1.0,18,Active,Low
+SUP-0072,Metro Industries 072,Professional Services,Europe,81150.23,68655.64,100.0,90.5,1.3,1.1,24,No Contract,Medium
+SUP-0073,NorthStar Group 073,Maintenance,North America,130110.74,126069.37,85.2,88.3,0.9,2.4,18,Active,High
+SUP-0074,Optima Services 074,Facilities,Latin America,207419.13,163423.43,85.7,86.8,2.4,2.3,40,Active,Low
+SUP-0075,Pioneer Partners 075,IT Services,Latin America,194186.31,163977.84,99.0,96.2,2.2,2.0,28,Active,Medium
+SUP-0076,Apex Systems 076,Facilities,Asia Pacific,55028.8,46574.28,89.9,84.6,1.5,0.0,22,Active,Medium
+SUP-0077,BlueRiver Enterprises 077,Facilities,North America,178169.35,157708.14,99.4,100.0,1.0,0.3,36,Active,Medium
+SUP-0078,ClearPoint Technologies 078,Packaging,North America,204480.59,141120.6,88.3,89.7,1.4,1.2,2,Active,Low
+SUP-0079,Delta Supply 079,Office Supplies,Europe,90000.0,2031789.03,99.7,100.0,1.8,1.2,4,No Contract,Medium
+SUP-0080,Evergreen Holdings 080,Marketing,North America,1063254.04,1588449.46,91.8,93.5,0.9,2.0,32,Active,High
+SUP-0081,Fusion Solutions 081,Packaging,Latin America,69338.57,52578.38,92.5,94.1,2.5,2.4,25,Active,Medium
+SUP-0082,Global Industries 082,Professional Services,North America,122102.56,128852.62,100.0,99.7,3.3,4.3,27,Active,High
+SUP-0083,Horizon Group 083,Marketing,Europe,37667.69,35893.87,88.8,92.1,4.3,4.3,11,Active,High
+SUP-0084,Ironwood Services 084,Logistics,Latin America,90155.66,71228.8,85.4,87.9,4.1,4.1,24,Active,Low
+SUP-0085,Keystone Partners 085,IT Hardware,Latin America,223151.23,300907.84,88.3,93.3,1.3,1.2,44,Active,Medium
+SUP-0086,Lighthouse Systems 086,IT Services,North America,543537.3,675450.4,93.7,91.6,1.8,1.8,32,Active,Medium
+SUP-0087,Metro Enterprises 087,Packaging,Europe,78504.89,105834.55,81.6,79.9,1.5,2.8,26,No Contract,High
+SUP-0088,NorthStar Technologies 088,Professional Services,Asia Pacific,84613.88,95387.36,94.8,92.9,1.5,0.0,20,Under Review,Low
+SUP-0089,Optima Supply 089,Logistics,Asia Pacific,19009.82,17139.33,87.8,90.9,1.4,0.0,20,Active,Medium
+SUP-0090,Pioneer Holdings 090,Office Supplies,Latin America,90000.0,123022.88,,,1.7,1.2,3,Expired,High
+SUP-0091,Apex Solutions 091,Logistics,Latin America,56251.37,52097.65,76.6,74.8,3.7,3.7,27,No Contract,Low
+SUP-0092,BlueRiver Industries 092,Packaging,Latin America,95852.0,123568.04,86.3,84.6,2.1,2.7,32,Under Review,Medium
+SUP-0093,ClearPoint Group 093,Professional Services,North America,67720.16,110260.85,80.9,82.1,0.6,1.0,8,Expired,Low
+SUP-0094,Delta Services 094,Professional Services,North America,148113.99,142446.93,86.0,85.1,3.2,2.9,17,No Contract,High
+SUP-0095,Evergreen Partners 095,Facilities,Asia Pacific,28064.81,29695.68,92.5,96.3,2.0,2.8,12,Under Review,High
+SUP-0096,Fusion Systems 096,Office Supplies,North America,37532.21,33731.07,89.9,80.9,2.4,3.2,14,No Contract,Low
+SUP-0097,Global Enterprises 097,Facilities,Europe,1368529.16,1183488.74,89.5,86.2,2.1,2.2,25,Active,Medium
+SUP-0098,Horizon Technologies 098,IT Services,North America,44917.26,42580.31,90.0,86.9,2.1,2.9,3,Active,Low
+SUP-0099,Ironwood Supply 099,IT Services,Latin America,54350.79,46580.11,92.2,82.9,2.2,2.4,30,Active,Medium
+SUP-0100,Keystone Holdings 100,Temporary Labor,North America,1021633.66,953676.53,84.9,81.1,0.3,0.0,32,Active,Medium
+SUP-0101,Lighthouse Solutions 101,Maintenance,North America,2972955.61,2641660.6,95.2,91.6,2.4,2.9,21,Active,High
+SUP-0102,Metro Industries 102,Packaging,North America,50434.63,55842.49,95.0,94.2,0.9,1.0,2,Active,Low
+SUP-0103,NorthStar Group 103,Facilities,North America,112617.35,112880.36,93.3,97.8,1.1,1.1,14,Active,Low
+SUP-0104,Optima Services 104,Temporary Labor,Asia Pacific,229017.92,214955.59,94.3,93.4,1.7,2.8,36,Active,Medium
+SUP-0105,Pioneer Partners 105,Marketing,Europe,916848.61,778511.0,92.8,88.7,4.7,2.8,2,No Contract,Medium
+SUP-0106,Apex Systems 106,Packaging,Latin America,60666.26,63251.56,100.0,100.0,0.7,0.0,21,Active,Medium
+SUP-0107,BlueRiver Enterprises 107,Professional Services,Europe,127353.52,113322.99,90.5,94.7,1.6,0.7,12,Active,Low
+SUP-0108,ClearPoint Technologies 108,Facilities,Asia Pacific,354101.04,360536.98,89.2,85.3,1.4,1.1,32,No Contract,Low
+SUP-0109,Delta Supply 109,IT Services,Asia Pacific,251391.33,249187.91,86.5,82.8,3.2,3.0,17,No Contract,High
+SUP-0110,Evergreen Holdings 110,Maintenance,Asia Pacific,111730.38,94741.89,84.8,87.0,1.3,0.1,28,Under Review,Low
+SUP-0111,Fusion Solutions 111,Professional Services,Latin America,142368.93,212095.51,83.5,82.6,,,30,No Contract,Low
+SUP-0112,Global Industries 112,Logistics,North America,41155.14,51661.23,85.7,88.3,0.7,0.0,42,No Contract,High
+SUP-0113,Horizon Group 113,Facilities,Asia Pacific,128261.48,168056.03,90.6,90.5,3.5,5.5,22,Active,Low
+SUP-0114,Ironwood Services 114,Office Supplies,Latin America,90000.0,204432.33,93.0,95.8,0.4,1.9,28,Active,Medium
+SUP-0115,Keystone Partners 115,Logistics,Latin America,205288.15,226110.09,91.3,87.2,2.3,2.0,9,Active,Low
+SUP-0116,Lighthouse Systems 116,Maintenance,Asia Pacific,93402.44,80180.78,86.4,86.4,2.0,1.7,36,Expired,High
+SUP-0117,Metro Enterprises 117,Marketing,Asia Pacific,260807.67,266478.09,96.4,95.6,2.2,1.3,16,Under Review,Medium
+SUP-0118,NorthStar Technologies 118,Packaging,Latin America,448074.96,420489.89,95.4,90.6,0.4,0.0,18,Active,High
+SUP-0119,Optima Supply 119,Professional Services,Asia Pacific,190123.54,155068.81,90.0,83.8,1.3,1.2,24,Active,Low
+SUP-0120,Pioneer Holdings 120,Office Supplies,Latin America,90000.0,182323.93,87.1,89.8,3.1,2.3,8,Active,Medium
+SUP-0121,Apex Solutions 121,Office Supplies,North America,90000.0,168678.95,94.3,92.9,5.2,5.2,26,Active,Medium
+SUP-0122,BlueRiver Industries 122,Office Supplies,Europe,90000.0,127797.36,92.1,88.0,1.5,0.2,34,Active,Low
+SUP-0123,ClearPoint Group 123,IT Services,North America,79097.93,75577.33,82.3,81.9,2.9,2.3,27,Active,Low
+SUP-0124,Delta Services 124,Professional Services,North America,223349.76,254017.75,90.6,95.1,1.8,2.0,8,Under Review,Low
+SUP-0125,Evergreen Partners 125,IT Services,Europe,147666.76,159984.28,92.6,83.4,1.6,1.9,23,Active,High
+SUP-0126,Fusion Systems 126,Office Supplies,North America,90000.0,1728917.37,85.6,79.6,1.2,1.5,31,No Contract,Medium
+SUP-0127,Global Enterprises 127,Facilities,Europe,784933.99,902082.06,92.1,88.4,1.7,0.6,5,Expired,Medium
+SUP-0128,Horizon Technologies 128,Logistics,Europe,239389.34,247928.75,82.3,88.1,2.7,3.4,13,Active,Medium
+SUP-0129,Ironwood Supply 129,IT Services,Asia Pacific,75882.61,64600.44,99.0,100.0,2.8,2.2,33,Active,Medium
+SUP-0130,Keystone Holdings 130,Office Supplies,Latin America,53508.11,39939.22,98.5,100.0,0.5,1.0,27,No Contract,Medium
+SUP-0131,Lighthouse Solutions 131,Logistics,Latin America,535600.03,685605.49,89.5,84.9,1.1,1.1,28,Active,Medium
+SUP-0132,Metro Industries 132,Temporary Labor,Europe,211662.69,192296.7,93.2,88.7,0.6,0.0,43,Under Review,Medium
+SUP-0133,NorthStar Group 133,Office Supplies,Europe,90000.0,312164.38,76.5,78.3,1.7,1.5,29,Active,Low
+SUP-0134,Optima Services 134,Facilities,Latin America,28436.08,25493.02,84.1,84.3,1.3,1.6,31,Expired,High
+SUP-0135,Pioneer Partners 135,Office Supplies,North America,90000.0,408829.92,89.2,91.4,2.1,2.6,51,No Contract,High
+SUP-0136,Apex Systems 136,IT Hardware,Asia Pacific,250000.0,366030.25,84.6,83.8,2.3,2.1,22,Active,Low
+SUP-0137,BlueRiver Enterprises 137,Temporary Labor,Europe,53614.2,44786.98,95.3,96.4,0.1,1.4,16,Active,Medium
+SUP-0138,ClearPoint Technologies 138,Office Supplies,North America,90000.0,110267.22,100.0,100.0,1.7,2.5,28,Under Review,Low
+SUP-0139,Delta Supply 139,Marketing,Asia Pacific,211867.68,226863.84,83.9,87.1,3.7,3.5,28,Active,High
+SUP-0140,Evergreen Holdings 140,IT Services,Europe,171522.0,204815.94,86.0,89.2,1.1,1.7,19,Active,High
+SUP-0141,Fusion Solutions 141,Office Supplies,North America,90000.0,133211.45,92.4,85.9,1.1,2.6,14,Active,High
+SUP-0142,Global Industries 142,Office Supplies,Asia Pacific,90000.0,132566.51,100.0,91.7,3.3,4.9,47,Active,Low
+SUP-0143,Horizon Group 143,Temporary Labor,North America,126503.17,127019.37,83.7,87.7,2.9,2.0,27,No Contract,Low
+SUP-0144,Ironwood Services 144,Office Supplies,Asia Pacific,90000.0,174060.21,92.5,97.2,0.7,0.0,17,No Contract,Low
+SUP-0145,Keystone Partners 145,Professional Services,North America,708915.75,647325.38,100.0,97.8,2.7,3.9,33,Active,Low
+SUP-0146,Lighthouse Systems 146,Facilities,Europe,12498.22,9858.82,81.1,73.7,0.9,0.0,23,No Contract,Low
+SUP-0147,Metro Enterprises 147,Facilities,Latin America,128431.34,132636.11,83.3,83.7,1.1,0.0,21,Active,Low
+SUP-0148,NorthStar Technologies 148,Office Supplies,North America,90000.0,254100.01,88.5,92.2,0.7,0.3,30,Active,High
+SUP-0149,Optima Supply 149,Professional Services,Latin America,218817.64,179050.52,87.9,95.1,0.5,0.9,11,Active,Low
+SUP-0150,Pioneer Holdings 150,IT Hardware,Asia Pacific,112205.29,115635.96,95.9,97.9,1.8,1.7,28,Under Review,Low
