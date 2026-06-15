@@ -4,6 +4,10 @@ import pandas as pd
 import streamlit as st
 
 from src.category_metrics import calculate_category_metrics
+from src.charts import (
+    create_category_concentration_chart,
+    create_supplier_risk_scatter,
+)
 from src.cleaning import clean_supplier_data
 from src.ingestion import (
     add_internal_supplier_id,
@@ -31,22 +35,9 @@ SAMPLE_FILE = (
 
 def prepare_supplier_data(
     raw_data: pd.DataFrame,
-) -> tuple[
-    pd.DataFrame,
-    pd.DataFrame,
-    pd.DataFrame,
-    pd.DataFrame,
-]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Clean, validate, score, and summarize supplier data.
-
-    Returns
-    -------
-    tuple
-        supplier_data
-        category_metrics
-        supplier_findings
-        category_findings
     """
     supplier_data = clean_supplier_data(raw_data)
 
@@ -76,21 +67,7 @@ def prepare_supplier_data(
         supplier_data
     )
 
-    supplier_findings = create_supplier_findings(
-        supplier_data,
-        top_n=10,
-    )
-
-    category_findings = create_category_findings(
-        category_metrics
-    )
-
-    return (
-        supplier_data,
-        category_metrics,
-        supplier_findings,
-        category_findings,
-    )
+    return supplier_data, category_metrics
 
 
 def display_executive_overview(
@@ -100,17 +77,11 @@ def display_executive_overview(
     """
     Display headline supplier and category metrics.
     """
-    total_spend = supplier_data[
-        "annual_spend"
-    ].sum()
+    total_spend = supplier_data["annual_spend"].sum()
 
-    supplier_count = supplier_data[
-        "supplier_id"
-    ].nunique()
+    supplier_count = supplier_data["supplier_id"].nunique()
 
-    category_count = supplier_data[
-        "category"
-    ].nunique()
+    category_count = supplier_data["category"].nunique()
 
     high_attention_count = (
         supplier_data["attention_level"]
@@ -141,23 +112,17 @@ def display_executive_overview(
     )
 
     concentrated_categories = (
-        category_metrics[
-            "concentration_risk_flag"
-        ]
+        category_metrics["concentration_risk_flag"]
         .sum()
     )
 
     fragmented_categories = (
-        category_metrics[
-            "fragmentation_review_flag"
-        ]
+        category_metrics["fragmentation_review_flag"]
         .sum()
     )
 
     tail_review_categories = (
-        category_metrics[
-            "tail_spend_review_flag"
-        ]
+        category_metrics["tail_spend_review_flag"]
         .sum()
     )
 
@@ -218,9 +183,7 @@ def display_supplier_attention_table(
                 "Category Spend Share %"
             ),
             "on_time_delivery_pct": "OTD %",
-            "otd_change_pct_points": (
-                "OTD Change"
-            ),
+            "otd_change_pct_points": "OTD Change",
             "defect_rate_pct": "Defect Rate %",
             "defect_rate_change_pct_points": (
                 "Defect Rate Change"
@@ -228,9 +191,7 @@ def display_supplier_attention_table(
             "supplier_attention_score": (
                 "Attention Score"
             ),
-            "attention_level": (
-                "Attention Level"
-            ),
+            "attention_level": "Attention Level",
             "data_confidence_pct": (
                 "Data Confidence %"
             ),
@@ -250,9 +211,13 @@ def display_supplier_findings(
     """
     Display the top supplier management findings.
     """
-    for _, finding in (
-        supplier_findings.head(5).iterrows()
-    ):
+    if supplier_findings.empty:
+        st.info(
+            "No supplier findings match the selected filters."
+        )
+        return
+
+    for _, finding in supplier_findings.head(5).iterrows():
         with st.expander(
             (
                 f"{finding['supplier_name']} — "
@@ -292,16 +257,12 @@ def display_category_findings(
     """
     if category_findings.empty:
         st.info(
-            "No category review findings were triggered."
+            "No category review findings match the selected filters."
         )
         return
 
-    for _, finding in (
-        category_findings.iterrows()
-    ):
-        with st.expander(
-            str(finding["category"])
-        ):
+    for _, finding in category_findings.iterrows():
+        with st.expander(str(finding["category"])):
             st.write(
                 f"**Observation:** "
                 f"{finding['observation']}"
@@ -323,9 +284,7 @@ def main() -> None:
     Run the local Streamlit application.
     """
     st.set_page_config(
-        page_title=(
-            "Supplier Performance Briefing"
-        ),
+        page_title="Supplier Performance Briefing",
         page_icon="📊",
         layout="wide",
     )
@@ -336,14 +295,14 @@ def main() -> None:
     )
 
     st.write(
-        "Identify supplier relationships and "
-        "categories that may require management review."
+        "Identify supplier relationships and categories "
+        "that may require management review."
     )
 
     st.info(
         "This prototype uses synthetic data and an "
-        "illustrative scoring methodology. Findings "
-        "are review hypotheses, not final sourcing decisions."
+        "illustrative scoring methodology. Findings are "
+        "review hypotheses, not final sourcing decisions."
     )
 
     st.sidebar.header("Data source")
@@ -361,32 +320,23 @@ def main() -> None:
 
     try:
         if use_sample_data:
-            raw_data = load_supplier_data(
-                SAMPLE_FILE
-            )
+            raw_data = load_supplier_data(SAMPLE_FILE)
+
         elif uploaded_file is not None:
-            if uploaded_file.name.lower().endswith(
-                ".csv"
-            ):
-                raw_data = pd.read_csv(
-                    uploaded_file
-                )
+            if uploaded_file.name.lower().endswith(".csv"):
+                raw_data = pd.read_csv(uploaded_file)
             else:
-                raw_data = pd.read_excel(
-                    uploaded_file
-                )
+                raw_data = pd.read_excel(uploaded_file)
+
         else:
             st.warning(
                 "Upload a CSV or Excel file to continue."
             )
             st.stop()
 
-        (
-            supplier_data,
-            category_metrics,
-            supplier_findings,
-            category_findings,
-        ) = prepare_supplier_data(raw_data)
+        supplier_data, category_metrics = (
+            prepare_supplier_data(raw_data)
+        )
 
     except (
         FileNotFoundError,
@@ -399,76 +349,148 @@ def main() -> None:
         )
         st.stop()
 
-    data_quality_summary = (
-        create_data_quality_summary(
-            supplier_data
-        )
+    st.sidebar.header("Filters")
+
+    available_categories = sorted(
+        supplier_data["category"]
+        .dropna()
+        .unique()
+        .tolist()
     )
 
-    overview_tab, supplier_tab, findings_tab = (
-        st.tabs(
-            [
-                "Executive Overview",
-                "Supplier Attention",
-                "Management Findings",
-            ]
+    selected_categories = st.sidebar.multiselect(
+        "Category",
+        options=available_categories,
+        default=available_categories,
+    )
+
+    available_attention_levels = [
+        "High",
+        "Medium",
+        "Low",
+    ]
+
+    selected_attention_levels = st.sidebar.multiselect(
+        "Attention level",
+        options=available_attention_levels,
+        default=available_attention_levels,
+    )
+
+    filtered_supplier_data = supplier_data[
+        supplier_data["category"].isin(
+            selected_categories
         )
+        & supplier_data["attention_level"].isin(
+            selected_attention_levels
+        )
+    ].copy()
+
+    filtered_category_metrics = category_metrics[
+        category_metrics["category"].isin(
+            selected_categories
+        )
+    ].copy()
+
+    filtered_supplier_findings = create_supplier_findings(
+        filtered_supplier_data,
+        top_n=10,
+    )
+
+    filtered_category_findings = create_category_findings(
+        filtered_category_metrics
+    )
+
+    overview_tab, supplier_tab, findings_tab = st.tabs(
+        [
+            "Executive Overview",
+            "Supplier Attention",
+            "Management Findings",
+        ]
     )
 
     with overview_tab:
         st.subheader("Executive overview")
 
-        display_executive_overview(
-            supplier_data,
-            category_metrics,
-        )
+        if filtered_supplier_data.empty:
+            st.warning(
+                "No suppliers match the selected filters."
+            )
+        else:
+            display_executive_overview(
+                filtered_supplier_data,
+                filtered_category_metrics,
+            )
 
-        st.subheader("Data quality")
+            data_quality_summary = (
+                create_data_quality_summary(
+                    filtered_supplier_data
+                )
+            )
 
-        quality_columns = st.columns(4)
+            st.subheader("Data quality")
 
-        quality_columns[0].metric(
-            "Missing Cells",
-            data_quality_summary[
-                "missing_cells"
-            ],
-        )
+            quality_columns = st.columns(4)
 
-        quality_columns[1].metric(
-            "Missing Cell %",
-            (
-                f"{data_quality_summary['missing_cell_pct']}%"
-            ),
-        )
+            quality_columns[0].metric(
+                "Missing Cells",
+                data_quality_summary[
+                    "missing_cells"
+                ],
+            )
 
-        quality_columns[2].metric(
-            "Duplicate Rows",
-            data_quality_summary[
-                "exact_duplicate_rows"
-            ],
-        )
+            quality_columns[1].metric(
+                "Missing Cell %",
+                (
+                    f"{data_quality_summary['missing_cell_pct']}%"
+                ),
+            )
 
-        quality_columns[3].metric(
-            "Invalid Spend Rows",
-            data_quality_summary[
-                "invalid_spend_rows"
-            ],
-        )
+            quality_columns[2].metric(
+                "Duplicate Rows",
+                data_quality_summary[
+                    "exact_duplicate_rows"
+                ],
+            )
+
+            quality_columns[3].metric(
+                "Invalid Spend Rows",
+                data_quality_summary[
+                    "invalid_spend_rows"
+                ],
+            )
 
         st.subheader("Category overview")
 
-        category_table = (
-            category_metrics.sort_values(
-                by="total_category_spend",
-                ascending=False,
+        if filtered_category_metrics.empty:
+            st.warning(
+                "No categories match the selected filters."
             )
-        )
+        else:
+            category_table = (
+                filtered_category_metrics.sort_values(
+                    by="total_category_spend",
+                    ascending=False,
+                )
+            )
 
-        st.dataframe(
-            category_table,
-            use_container_width=True,
-            hide_index=True,
-        )
+            st.dataframe(
+                category_table,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.subheader("Category concentration")
+
+            concentration_chart = (
+                create_category_concentration_chart(
+                    filtered_category_metrics
+                )
+            )
+
+            st.plotly_chart(
+                concentration_chart,
+                use_container_width=True,
+            )
 
     with supplier_tab:
         st.subheader(
@@ -476,25 +498,48 @@ def main() -> None:
         )
 
         st.caption(
-            "Higher scores indicate that a supplier "
-            "may deserve further management review."
+            "Higher scores indicate that a supplier may "
+            "deserve further management review."
         )
 
-        display_supplier_attention_table(
-            supplier_data
-        )
+        if filtered_supplier_data.empty:
+            st.warning(
+                "No suppliers match the selected filters."
+            )
+        else:
+            st.caption(
+                f"Showing {len(filtered_supplier_data)} "
+                f"filtered suppliers."
+            )
+
+            display_supplier_attention_table(
+                filtered_supplier_data
+            )
+
+            st.subheader(
+                "Supplier spend and attention positioning"
+            )
+
+            supplier_scatter = create_supplier_risk_scatter(
+                filtered_supplier_data
+            )
+
+            st.plotly_chart(
+                supplier_scatter,
+                use_container_width=True,
+            )
 
     with findings_tab:
         st.subheader("Supplier findings")
 
         display_supplier_findings(
-            supplier_findings
+            filtered_supplier_findings
         )
 
         st.subheader("Category findings")
 
         display_category_findings(
-            category_findings
+            filtered_category_findings
         )
 
 
