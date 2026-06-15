@@ -7,6 +7,11 @@ from src.ingestion import (
     validate_required_columns,
 )
 
+from src.validation import (
+    calculate_missing_values,
+    create_data_quality_summary,
+)
+
 
 def main() -> None:
     """
@@ -29,6 +34,14 @@ def main() -> None:
 
     missing_columns = validate_required_columns(supplier_data)
 
+    data_quality_summary = create_data_quality_summary(
+        supplier_data
+    )
+
+    missing_value_summary = calculate_missing_values(
+        supplier_data
+    )
+
     if missing_columns:
         print("Dataset validation failed.")
         print(
@@ -44,6 +57,48 @@ def main() -> None:
     print(f"Columns: {dataset_summary['columns']}")
     print(f"Suppliers: {dataset_summary['suppliers']}")
     print(f"Categories: {dataset_summary['categories']}")
+    print("\nData quality summary")
+    print("--------------------")
+    print(
+        f"Missing cells: "
+        f"{data_quality_summary['missing_cells']}"
+    )
+    print(
+        f"Missing cell percentage: "
+        f"{data_quality_summary['missing_cell_pct']}%"
+    )
+    print(
+        f"Exact duplicate rows: "
+        f"{data_quality_summary['exact_duplicate_rows']}"
+    )
+    print(
+        "Duplicate supplier-name rows: "
+        f"{data_quality_summary['duplicate_supplier_name_rows']}"
+    )
+    print(
+        f"Invalid spend rows: "
+        f"{data_quality_summary['invalid_spend_rows']}"
+    )
+    print(
+        "Invalid percentage values: "
+        f"{data_quality_summary['invalid_percentage_values']}"
+    )
+
+    print("\nColumns with missing values")
+    print("---------------------------")
+
+    columns_with_missing_values = missing_value_summary[
+        missing_value_summary["missing_count"] > 0
+        ]
+
+    if columns_with_missing_values.empty:
+        print("No missing values found.")
+    else:
+        print(
+            columns_with_missing_values.to_string(
+                index=False
+            )
+        )
 
 
 if __name__ == "__main__":
