@@ -1,5 +1,8 @@
 # Supplier Performance & Concentration Briefing Tool
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://supplier-performance-briefing-5k3n38kxgqwe3g7n7q3tbf.streamlit.app/
+)
+
 A Streamlit-based analytics application that identifies supplier relationships and spend categories that may deserve management review based on supplier performance, spend exposure, category concentration, and data completeness.
 
 This project is designed as a portfolio-ready procurement analytics tool. It uses synthetic supplier data and a transparent, rules-based scoring methodology.
