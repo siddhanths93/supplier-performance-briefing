@@ -67,7 +67,6 @@ def clean_text_columns(data: pd.DataFrame) -> pd.DataFrame:
                 {
                     "": pd.NA,
                     "N/A": pd.NA,
-                    "NA": pd.NA,
                     "None": pd.NA,
                     "null": pd.NA,
                 }
@@ -202,14 +201,13 @@ def convert_numeric_columns(
         if column not in data.columns:
             continue
 
-        if data[column].dtype == "object":
-            data[column] = (
-                data[column]
-                .astype("string")
-                .str.replace("$", "", regex=False)
-                .str.replace(",", "", regex=False)
-                .str.strip()
-            )
+        data[column] = (
+            data[column]
+            .astype("string")
+            .str.replace("$", "", regex=False)
+            .str.replace(",", "", regex=False)
+            .str.strip()
+        )
 
         data[column] = pd.to_numeric(
             data[column],
