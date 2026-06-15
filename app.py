@@ -20,6 +20,11 @@ from src.category_metrics import (
     calculate_category_metrics,
 )
 
+from src.scoring import (
+    ATTENTION_SCORE_WEIGHTS,
+    add_supplier_attention_scores,
+)
+
 def main() -> None:
     """
     Load and validate the synthetic supplier dataset.
@@ -47,6 +52,9 @@ def main() -> None:
         supplier_data
     )
 
+    supplier_data = add_supplier_attention_scores(
+        supplier_data
+    )
     category_metrics = calculate_category_metrics(
         supplier_data
     )
@@ -168,6 +176,51 @@ def main() -> None:
             by="total_category_spend",
             ascending=False,
         )
+        .to_string(index=False)
+    )
+
+    print("\nSupplier attention score methodology")
+    print("------------------------------------")
+
+    for score_component, weight in (
+            ATTENTION_SCORE_WEIGHTS.items()
+    ):
+        readable_name = (
+            score_component
+            .replace("_score", "")
+            .replace("_", " ")
+            .title()
+        )
+
+        print(
+            f"{readable_name}: "
+            f"{weight:.0%}"
+        )
+
+    print("\nTop supplier management-attention list")
+    print("--------------------------------------")
+
+    attention_columns = [
+        "supplier_name",
+        "category",
+        "annual_spend",
+        "category_spend_share_pct",
+        "spend_exposure_score",
+        "delivery_risk_score",
+        "quality_risk_score",
+        "criticality_score",
+        "supplier_attention_score",
+        "attention_level",
+        "data_confidence_pct",
+    ]
+
+    print(
+        supplier_data[attention_columns]
+        .sort_values(
+            by="supplier_attention_score",
+            ascending=False,
+        )
+        .head(10)
         .to_string(index=False)
     )
 
