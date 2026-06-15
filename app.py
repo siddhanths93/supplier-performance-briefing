@@ -24,6 +24,7 @@ from src.validation import create_data_quality_summary
 
 from src.export import (
     create_category_briefing_export,
+    create_excel_briefing_workbook,
     create_supplier_briefing_export,
 )
 
@@ -748,13 +749,37 @@ def main() -> None:
             filtered_category_findings
         )
 
-        if not category_export.empty:
+        if category_export.empty:
+            st.info(
+                "No category findings are available for the selected filters, "
+                "so there is no category briefing to download."
+            )
+        else:
             st.download_button(
                 label="Download category briefing CSV",
                 data=category_export.to_csv(index=False),
                 file_name="category_briefing.csv",
                 mime="text/csv",
             )
+
+        st.subheader("Executive briefing workbook")
+
+        excel_briefing = create_excel_briefing_workbook(
+            supplier_findings=filtered_supplier_findings,
+            category_findings=filtered_category_findings,
+            supplier_data=filtered_supplier_data,
+            category_metrics=filtered_category_metrics,
+        )
+
+        st.download_button(
+            label="Download executive briefing Excel workbook",
+            data=excel_briefing,
+            file_name="supplier_executive_briefing.xlsx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+        )
 
 
 if __name__ == "__main__":
