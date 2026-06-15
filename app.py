@@ -12,6 +12,7 @@ from src.validation import (
     create_data_quality_summary,
 )
 
+from src.cleaning import clean_supplier_data
 
 def main() -> None:
     """
@@ -27,6 +28,10 @@ def main() -> None:
     )
 
     supplier_data = load_supplier_data(sample_file)
+
+    supplier_data = clean_supplier_data(
+        supplier_data
+    )
 
     supplier_data = add_internal_supplier_id(
         supplier_data
