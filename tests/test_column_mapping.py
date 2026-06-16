@@ -1,6 +1,8 @@
 import pandas as pd
 
 from src.column_mapping import (
+    get_column_role,
+    is_column_used_in_analysis,
     map_columns,
     normalize_column_name,
 )
@@ -50,6 +52,8 @@ def test_map_columns_leaves_unmapped_columns_unchanged():
     ]
 
     assert len(unmapped_rows) == 1
+    assert unmapped_rows.iloc[0]["column_role"] == "Unmapped"
+    assert unmapped_rows.iloc[0]["used_in_analysis"] == False
 
 
 def test_map_columns_ignores_duplicate_aliases_for_same_field():
@@ -75,3 +79,44 @@ def test_map_columns_ignores_duplicate_aliases_for_same_field():
     ]
 
     assert len(duplicate_rows) == 1
+
+
+def test_map_columns_identifies_context_columns():
+    raw_data = pd.DataFrame(
+        {
+            "Vendor Name": ["Apex Freight Solutions"],
+            "Invoice Amount": [120000],
+            "Cost Center": ["CC100"],
+            "Business Unit": ["North America"],
+            "Payment Terms": ["Net 60"],
+            "PO Number": ["PO123"],
+        }
+    )
+
+    mapped_data, mapping_report = map_columns(raw_data)
+
+    assert "cost_center" in mapped_data.columns
+    assert "business_unit" in mapped_data.columns
+    assert "payment_terms" in mapped_data.columns
+    assert "po_number" in mapped_data.columns
+
+    context_rows = mapping_report[
+        mapping_report["column_role"] == "Context"
+    ]
+
+    assert len(context_rows) == 4
+
+
+def test_get_column_role_returns_expected_roles():
+    assert get_column_role("supplier_name") == "Required"
+    assert get_column_role("description") == "Classification"
+    assert get_column_role("on_time_delivery_pct") == "Full scoring"
+    assert get_column_role("cost_center") == "Context"
+    assert get_column_role(None) == "Unmapped"
+
+
+def test_is_column_used_in_analysis_identifies_used_columns():
+    assert is_column_used_in_analysis("supplier_name") == True
+    assert is_column_used_in_analysis("annual_spend") == True
+    assert is_column_used_in_analysis("cost_center") == False
+    assert is_column_used_in_analysis(None) == False

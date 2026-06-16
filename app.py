@@ -46,7 +46,7 @@ def prepare_supplier_data(
     """
     Clean, validate, score, and summarize supplier data.
     """
-    mapped_data, _ = map_columns(raw_data)
+    mapped_data, mapping_report = map_columns(raw_data)
 
     supplier_data = clean_supplier_data(mapped_data)
 

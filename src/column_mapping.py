@@ -3,6 +3,50 @@ import re
 import pandas as pd
 
 
+COLUMN_ROLES = {
+    "supplier_id": "Context",
+    "supplier_name": "Required",
+    "category": "Classification",
+    "description": "Classification",
+    "annual_spend": "Required",
+    "prior_year_spend": "Full scoring",
+    "on_time_delivery_pct": "Full scoring",
+    "prior_year_otd_pct": "Full scoring",
+    "defect_rate_pct": "Full scoring",
+    "prior_year_defect_rate_pct": "Full scoring",
+    "supplier_criticality": "Full scoring",
+    "contract_status": "Context",
+    "region": "Context",
+    "country": "Context",
+    "invoice_date": "Context",
+    "po_number": "Context",
+    "business_unit": "Context",
+    "cost_center": "Context",
+    "buyer": "Context",
+    "payment_terms": "Context",
+    "gl_account": "Context",
+    "lead_time_days": "Context",
+}
+
+
+ANALYSIS_USED_COLUMNS = {
+    "supplier_id",
+    "supplier_name",
+    "category",
+    "description",
+    "annual_spend",
+    "prior_year_spend",
+    "on_time_delivery_pct",
+    "prior_year_otd_pct",
+    "defect_rate_pct",
+    "prior_year_defect_rate_pct",
+    "supplier_criticality",
+    "contract_status",
+    "region",
+    "lead_time_days",
+}
+
+
 COLUMN_ALIASES = {
     "supplier_id": [
         "supplier id",
@@ -13,6 +57,8 @@ COLUMN_ALIASES = {
         "vendor no",
         "supplier number",
         "supplier no",
+        "vendor code",
+        "supplier code",
     ],
     "supplier_name": [
         "supplier",
@@ -25,6 +71,7 @@ COLUMN_ALIASES = {
         "payee name",
         "merchant",
         "supplier legal name",
+        "vendor legal name",
     ],
     "category": [
         "category",
@@ -34,8 +81,12 @@ COLUMN_ALIASES = {
         "commodity group",
         "commodity_group",
         "purchasing category",
+        "procurement category",
         "gl category",
         "expense category",
+        "category name",
+        "material group",
+        "item category",
     ],
     "description": [
         "description",
@@ -45,6 +96,10 @@ COLUMN_ALIASES = {
         "purchase description",
         "transaction description",
         "line description",
+        "commodity description",
+        "material description",
+        "product description",
+        "service description",
     ],
     "annual_spend": [
         "annual spend",
@@ -59,6 +114,10 @@ COLUMN_ALIASES = {
         "total_spend",
         "extended amount",
         "net amount",
+        "transaction amount",
+        "line amount",
+        "actual spend",
+        "spend amount",
     ],
     "prior_year_spend": [
         "prior year spend",
@@ -67,6 +126,7 @@ COLUMN_ALIASES = {
         "last year spend",
         "py spend",
         "prior spend",
+        "previous spend",
     ],
     "on_time_delivery_pct": [
         "on time delivery",
@@ -76,6 +136,8 @@ COLUMN_ALIASES = {
         "otd %",
         "otd pct",
         "current otd",
+        "current otd %",
+        "on time delivery pct",
     ],
     "prior_year_otd_pct": [
         "prior year otd",
@@ -84,6 +146,8 @@ COLUMN_ALIASES = {
         "previous year otd",
         "last year otd",
         "py otd",
+        "prior otd",
+        "previous otd %",
     ],
     "defect_rate_pct": [
         "defect rate",
@@ -91,6 +155,8 @@ COLUMN_ALIASES = {
         "defect_rate_pct",
         "quality defect rate",
         "current defect rate",
+        "current defect rate %",
+        "defect pct",
     ],
     "prior_year_defect_rate_pct": [
         "prior year defect rate",
@@ -99,6 +165,7 @@ COLUMN_ALIASES = {
         "previous year defect rate",
         "last year defect rate",
         "py defect rate",
+        "prior defect rate",
     ],
     "lead_time_days": [
         "lead time",
@@ -106,6 +173,7 @@ COLUMN_ALIASES = {
         "lead_time_days",
         "avg lead time",
         "average lead time",
+        "average lead time days",
     ],
     "region": [
         "region",
@@ -113,12 +181,20 @@ COLUMN_ALIASES = {
         "geo",
         "geography",
         "country region",
+        "market region",
+    ],
+    "country": [
+        "country",
+        "supplier country",
+        "vendor country",
+        "ship from country",
     ],
     "contract_status": [
         "contract status",
         "contract_status",
         "contract",
         "agreement status",
+        "contract coverage",
     ],
     "supplier_criticality": [
         "supplier criticality",
@@ -126,6 +202,7 @@ COLUMN_ALIASES = {
         "criticality",
         "business criticality",
         "critical supplier",
+        "supplier risk tier",
     ],
     "invoice_date": [
         "invoice date",
@@ -134,6 +211,53 @@ COLUMN_ALIASES = {
         "posting date",
         "date",
         "po date",
+        "document date",
+    ],
+    "po_number": [
+        "po number",
+        "po_number",
+        "purchase order",
+        "purchase order number",
+        "purchase_order",
+        "po",
+    ],
+    "business_unit": [
+        "business unit",
+        "business_unit",
+        "division",
+        "department",
+        "operating unit",
+        "org unit",
+    ],
+    "cost_center": [
+        "cost center",
+        "cost_center",
+        "cost centre",
+        "department code",
+        "cost center code",
+    ],
+    "buyer": [
+        "buyer",
+        "buyer name",
+        "purchasing owner",
+        "category manager",
+        "sourcing owner",
+        "procurement owner",
+    ],
+    "payment_terms": [
+        "payment terms",
+        "payment_terms",
+        "terms",
+        "supplier terms",
+        "vendor terms",
+    ],
+    "gl_account": [
+        "gl account",
+        "gl_account",
+        "general ledger",
+        "account code",
+        "expense account",
+        "ledger account",
     ],
 }
 
@@ -178,9 +302,31 @@ def build_alias_lookup() -> dict[str, str]:
     return alias_lookup
 
 
+def get_column_role(canonical_column: str | None) -> str:
+    """
+    Return the role of a mapped canonical column.
+    """
+    if canonical_column is None:
+        return "Unmapped"
+
+    return COLUMN_ROLES.get(canonical_column, "Unmapped")
+
+
+def is_column_used_in_analysis(canonical_column: str | None) -> bool:
+    """
+    Return whether a canonical column is currently used by analytics.
+    """
+    if canonical_column is None:
+        return False
+
+    return canonical_column in ANALYSIS_USED_COLUMNS
+
+
 def map_columns(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Rename recognized uploaded columns to canonical names.
+
+    Extra columns are preserved and reported.
 
     Returns:
     - mapped DataFrame
@@ -214,7 +360,12 @@ def map_columns(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             report_rows.append(
                 {
                     "original_column": original_column,
+                    "normalized_column": normalized_column,
                     "mapped_column": canonical_column,
+                    "column_role": get_column_role(canonical_column),
+                    "used_in_analysis": is_column_used_in_analysis(
+                        canonical_column
+                    ),
                     "mapping_status": "Mapped",
                 }
             )
@@ -223,10 +374,11 @@ def map_columns(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             report_rows.append(
                 {
                     "original_column": original_column,
+                    "normalized_column": normalized_column,
                     "mapped_column": canonical_column,
-                    "mapping_status": (
-                        "Duplicate ignored"
-                    ),
+                    "column_role": get_column_role(canonical_column),
+                    "used_in_analysis": False,
+                    "mapping_status": "Duplicate ignored",
                 }
             )
 
@@ -234,7 +386,10 @@ def map_columns(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             report_rows.append(
                 {
                     "original_column": original_column,
+                    "normalized_column": normalized_column,
                     "mapped_column": "",
+                    "column_role": "Unmapped",
+                    "used_in_analysis": False,
                     "mapping_status": "Unmapped",
                 }
             )
