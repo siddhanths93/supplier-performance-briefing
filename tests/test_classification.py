@@ -53,6 +53,24 @@ def test_supplier_keyword_classification_returns_high_confidence():
     assert bool(classified_data.loc[0, "needs_classification_review"]) is False
 
 
+def test_broad_uploaded_category_does_not_force_specific_subcategory():
+    data = pd.DataFrame(
+        {
+            "supplier_name": ["Unknown Supplier"],
+            "category": ["Marketing"],
+            "description": ["General marketing expense"],
+            "annual_spend": [500],
+        }
+    )
+
+    classified_data = classify_spend_data(data)
+
+    assert classified_data.loc[0, "analysis_category"] == "Marketing"
+    assert classified_data.loc[0, "classification_source"] == "uploaded_category_fallback"
+    assert bool(classified_data.loc[0, "needs_classification_review"]) is True
+
+
+
 def test_description_keyword_classification_returns_valid_confidence():
     data = pd.DataFrame(
         {

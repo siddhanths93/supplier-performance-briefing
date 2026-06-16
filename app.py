@@ -895,6 +895,7 @@ def main() -> None:
             "taxonomy_level_1",
             "taxonomy_level_2",
             "classification_confidence",
+            "classification_score",
             "classification_reason",
             "needs_classification_review",
         ]

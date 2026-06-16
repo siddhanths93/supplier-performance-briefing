@@ -204,21 +204,24 @@ def score_taxonomy_row(
     if "category" in row.index and not pd.isna(row["category"]):
         uploaded_category = normalize_text(row["category"])
 
-        taxonomy_level_1 = normalize_text(
-            taxonomy_row["taxonomy_level_1"]
-        )
-
         taxonomy_level_2 = normalize_text(
             taxonomy_row["taxonomy_level_2"]
         )
 
-        if uploaded_category in [
-            taxonomy_level_1,
-            taxonomy_level_2,
-        ]:
+        # Only use uploaded category as a scoring signal when it matches
+        # the more specific taxonomy level 2.
+        #
+        # Do NOT score broad level 1 matches such as:
+        # Marketing -> Advertising
+        # Professional Services -> Consulting
+        # Facilities -> Maintenance
+        #
+        # Those are too broad and should fall back to the uploaded category
+        # unless supplier or description keywords provide more evidence.
+        if uploaded_category == taxonomy_level_2:
             score += UPLOADED_CATEGORY_SCORE
             matched_reasons.append(
-                f"uploaded category match +{UPLOADED_CATEGORY_SCORE}"
+                f"uploaded category level 2 match +{UPLOADED_CATEGORY_SCORE}"
             )
 
     return {
@@ -242,6 +245,62 @@ def determine_confidence(score: int) -> str:
         return "Low"
 
     return "Low"
+
+
+def get_uploaded_category_value(
+        row: pd.Series,
+) -> str:
+    """
+    Return uploaded category value if available.
+    """
+    if "category" not in row.index:
+        return ""
+
+    if pd.isna(row["category"]):
+        return ""
+
+    return str(row["category"]).strip()
+
+
+def create_user_friendly_reason(
+        matched_reasons: list[str],
+) -> str:
+    """
+    Convert internal scoring reasons into user-facing explanation text.
+    """
+    if not matched_reasons:
+        return "No matching rule explanation available."
+
+    cleaned_reasons = []
+
+    for reason in matched_reasons:
+        cleaned_reason = reason
+
+        cleaned_reason = re.sub(
+            r"\s\+\d+",
+            "",
+            cleaned_reason,
+        )
+
+        cleaned_reason = cleaned_reason.replace(
+            "supplier keyword",
+            "Matched supplier keyword",
+        )
+
+        cleaned_reason = cleaned_reason.replace(
+            "text keyword",
+            "Matched description/category keyword",
+        )
+
+        cleaned_reason = cleaned_reason.replace(
+            "uploaded category level 2 match",
+            "Matched uploaded category to taxonomy subcategory",
+        )
+
+        cleaned_reasons.append(cleaned_reason)
+
+    return "; ".join(cleaned_reasons)
+
 
 
 def classify_row(
@@ -309,7 +368,7 @@ def classify_row(
             "classification_source": "scored_builtin_rules",
             "classification_confidence": confidence,
             "classification_score": score,
-            "classification_reason": "; ".join(
+            "classification_reason": create_user_friendly_reason(
                 best_match["matched_reasons"]
             ),
             "needs_classification_review": (
@@ -317,23 +376,22 @@ def classify_row(
             ),
         }
 
-    if "category" in row.index and not pd.isna(row["category"]):
-        category_value = str(row["category"]).strip()
+    category_value = get_uploaded_category_value(row)
 
-        if category_value:
-            return {
-                "taxonomy_level_1": category_value,
-                "taxonomy_level_2": category_value,
-                "taxonomy_code": "UPLOADED_CATEGORY",
-                "analysis_category": category_value,
-                "classification_source": "uploaded_category_fallback",
-                "classification_confidence": "Low",
-                "classification_score": 0,
-                "classification_reason": (
-                    "No taxonomy keyword matched; used uploaded category."
-                ),
-                "needs_classification_review": True,
-            }
+    if category_value:
+        return {
+            "taxonomy_level_1": category_value,
+            "taxonomy_level_2": category_value,
+            "taxonomy_code": "UPLOADED_CATEGORY",
+            "analysis_category": category_value,
+            "classification_source": "uploaded_category_fallback",
+            "classification_confidence": "Low",
+            "classification_score": 0,
+            "classification_reason": (
+                "No supplier or description keyword matched; used uploaded category as-is."
+            ),
+            "needs_classification_review": True,
+        }
 
     return {
         "taxonomy_level_1": "Unclassified",
