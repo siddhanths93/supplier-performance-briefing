@@ -28,6 +28,8 @@ from src.export import (
     create_supplier_briefing_export,
 )
 
+from src.column_mapping import map_columns
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 SAMPLE_FILE = (
@@ -44,7 +46,9 @@ def prepare_supplier_data(
     """
     Clean, validate, score, and summarize supplier data.
     """
-    supplier_data = clean_supplier_data(raw_data)
+    mapped_data, _ = map_columns(raw_data)
+
+    supplier_data = clean_supplier_data(mapped_data)
 
     missing_columns = validate_required_columns(
         supplier_data

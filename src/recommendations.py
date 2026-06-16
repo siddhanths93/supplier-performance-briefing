@@ -7,6 +7,16 @@ def format_currency(value: float) -> str:
     """
     return f"${value:,.0f}"
 
+def is_true(value) -> bool:
+    """
+    Safely evaluate boolean-like values.
+
+    Pandas missing values such as pd.NA should be treated as False.
+    """
+    if pd.isna(value):
+        return False
+
+    return bool(value)
 
 def create_supplier_finding(
     supplier_row: pd.Series,
@@ -26,9 +36,11 @@ def create_supplier_finding(
     implications = []
     next_steps = []
 
-    if supplier_row.get(
-        "high_spend_exposure_flag",
-        False,
+    if is_true(
+            supplier_row.get(
+                "high_spend_exposure_flag",
+                False,
+            )
     ):
         observations.append(
             f"represents {category_share:.1f}% "
@@ -43,9 +55,11 @@ def create_supplier_finding(
             "contingency options"
         )
 
-    if supplier_row.get(
-        "delivery_deterioration_flag",
-        False,
+    if is_true(
+            supplier_row.get(
+                "delivery_deterioration_flag",
+                False,
+            )
     ):
         otd_change = supplier_row[
             "otd_change_pct_points"
@@ -64,9 +78,11 @@ def create_supplier_finding(
             "and agree on a corrective action plan"
         )
 
-    if supplier_row.get(
-        "quality_deterioration_flag",
-        False,
+    if is_true(
+            supplier_row.get(
+                "quality_deterioration_flag",
+                False,
+            )
     ):
         quality_change = supplier_row[
             "defect_rate_change_pct_points"
@@ -100,9 +116,11 @@ def create_supplier_finding(
             "confirm business-continuity and escalation plans"
         )
 
-    if supplier_row.get(
-        "missing_performance_data_flag",
-        False,
+    if is_true(
+            supplier_row.get(
+                "missing_performance_data_flag",
+                False,
+            )
     ):
         observations.append(
             "has incomplete delivery or quality data"
