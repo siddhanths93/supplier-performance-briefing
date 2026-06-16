@@ -30,6 +30,8 @@ from src.export import (
 
 from src.column_mapping import map_columns
 
+from src.data_readiness import create_data_readiness_report
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 SAMPLE_FILE = (
@@ -42,13 +44,26 @@ SAMPLE_FILE = (
 
 def prepare_supplier_data(
     raw_data: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, dict, pd.DataFrame]:
     """
     Clean, validate, score, and summarize supplier data.
     """
     mapped_data, mapping_report = map_columns(raw_data)
 
     supplier_data = clean_supplier_data(mapped_data)
+
+    readiness_report = create_data_readiness_report(
+        supplier_data,
+        mapping_report=mapping_report,
+    )
+
+    if not readiness_report["minimum_required_ready"]:
+        raise ValueError(
+            "Uploaded file is missing required fields: "
+            + ", ".join(
+                readiness_report["missing_required_columns"]
+            )
+        )
 
     missing_columns = validate_required_columns(
         supplier_data
@@ -76,7 +91,12 @@ def prepare_supplier_data(
         supplier_data
     )
 
-    return supplier_data, category_metrics
+    return (
+        supplier_data,
+        category_metrics,
+        readiness_report,
+        mapping_report,
+    )
 
 
 def display_executive_overview(
@@ -674,9 +694,12 @@ def main() -> None:
             )
             st.stop()
 
-        supplier_data, category_metrics = (
-            prepare_supplier_data(raw_data)
-        )
+        (
+            supplier_data,
+            category_metrics,
+            readiness_report,
+            mapping_report,
+        ) = prepare_supplier_data(raw_data)
 
     except (
         FileNotFoundError,
@@ -740,14 +763,110 @@ def main() -> None:
         filtered_category_metrics
     )
 
-    overview_tab, supplier_tab, findings_tab, methodology_tab = st.tabs(
+    readiness_tab, overview_tab, supplier_tab, findings_tab, methodology_tab = st.tabs(
         [
+            "Data Readiness",
             "Executive Overview",
             "Supplier Attention",
             "Management Findings",
             "Methodology",
         ]
     )
+
+    with readiness_tab:
+        st.subheader("Data readiness review")
+
+        status = readiness_report["analysis_status"]
+
+        if status == "Ready":
+            st.success("Status: Ready")
+        elif status == "Ready with Limitations":
+            st.warning("Status: Ready with limitations")
+        else:
+            st.error("Status: Not ready")
+
+        st.caption(
+            "This review explains what the uploaded file can support "
+            "before analytics, scoring, and findings are produced."
+        )
+
+        readiness_columns = st.columns(5)
+
+        readiness_columns[0].metric(
+            "Rows Uploaded",
+            readiness_report["row_count"],
+        )
+
+        readiness_columns[1].metric(
+            "Columns Detected",
+            readiness_report["column_count"],
+        )
+
+        readiness_columns[2].metric(
+            "File Type",
+            readiness_report["input_file_type"],
+        )
+
+        readiness_columns[3].metric(
+            "Mapped Columns",
+            readiness_report["mapped_column_count"],
+        )
+
+        readiness_columns[4].metric(
+            "Unmapped Columns",
+            readiness_report["unmapped_column_count"],
+        )
+
+        st.subheader("Supported upload types")
+
+        st.write(
+            "**Supplier-level performance file:** each row represents a "
+            "supplier or supplier-category relationship. This is best for "
+            "full supplier attention scoring."
+        )
+
+        st.write(
+            "**Transaction-level spend file:** each row represents an invoice, "
+            "PO line, or spend transaction. The app can aggregate rows before "
+            "analysis, but performance scoring depends on whether performance "
+            "fields are included."
+        )
+
+        st.subheader("Minimum required fields")
+
+        st.write(
+            "For basic analysis, the file must include supplier/vendor name, "
+            "spend amount, and either category or description."
+        )
+
+        st.subheader("Analysis capabilities")
+
+        st.dataframe(
+            readiness_report["analysis_capabilities"],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.subheader("Column readiness")
+
+        st.dataframe(
+            readiness_report["column_readiness_table"],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.subheader("Column mapping report")
+
+        st.dataframe(
+            mapping_report,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.subheader("Analysis limitations")
+
+        for limitation in readiness_report["analysis_limitations"]:
+            st.write(f"- {limitation}")
 
     with overview_tab:
         st.subheader("Executive overview")

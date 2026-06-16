@@ -1,30 +1,37 @@
 import pandas as pd
 
 
-REQUIRED_COLUMNS = [
+MINIMUM_REQUIRED_COLUMNS = [
     "supplier_name",
     "annual_spend",
 ]
 
-CONDITIONAL_REQUIRED_COLUMNS = [
+CLASSIFICATION_COLUMNS = [
     "category",
     "description",
 ]
 
-RECOMMENDED_COLUMNS = [
+FULL_SCORING_COLUMNS = [
     "prior_year_spend",
     "on_time_delivery_pct",
     "prior_year_otd_pct",
     "defect_rate_pct",
     "prior_year_defect_rate_pct",
     "supplier_criticality",
-    "contract_status",
-    "region",
 ]
 
-OPTIONAL_COLUMNS = [
+CONTEXT_COLUMNS = [
     "supplier_id",
     "invoice_date",
+    "po_number",
+    "business_unit",
+    "cost_center",
+    "buyer",
+    "region",
+    "country",
+    "contract_status",
+    "payment_terms",
+    "gl_account",
     "lead_time_days",
 ]
 
@@ -57,28 +64,35 @@ def get_missing_columns(
     ]
 
 
-def evaluate_required_columns(
+def has_classification_input(
+    data: pd.DataFrame,
+) -> bool:
+    """
+    Check whether the dataset has category or description.
+    """
+    return any(
+        column in data.columns
+        for column in CLASSIFICATION_COLUMNS
+    )
+
+
+def evaluate_minimum_required_columns(
     data: pd.DataFrame,
 ) -> tuple[bool, list[str]]:
     """
-    Evaluate whether the dataset has minimum required fields.
+    Evaluate whether the dataset has minimum fields for analysis.
 
-    Required:
+    Minimum required:
     - supplier_name
-    - annual_spend
-    - at least one of category or description
+    - annual_spend / spend amount
+    - category or description
     """
     missing_columns = get_missing_columns(
         data,
-        REQUIRED_COLUMNS,
+        MINIMUM_REQUIRED_COLUMNS,
     )
 
-    has_category_or_description = any(
-        column in data.columns
-        for column in CONDITIONAL_REQUIRED_COLUMNS
-    )
-
-    if not has_category_or_description:
+    if not has_classification_input(data):
         missing_columns.append(
             "category or description"
         )
@@ -88,97 +102,337 @@ def evaluate_required_columns(
     return is_ready, missing_columns
 
 
+def detect_input_file_type(
+    data: pd.DataFrame,
+) -> str:
+    """
+    Infer whether the file looks supplier-level or transaction-level.
+
+    This is a heuristic. It is meant to guide readiness messaging,
+    not permanently classify the source.
+    """
+    transaction_signals = [
+        "invoice_date",
+        "po_number",
+        "business_unit",
+        "cost_center",
+        "buyer",
+        "gl_account",
+    ]
+
+    transaction_signal_count = len(
+        get_present_columns(
+            data,
+            transaction_signals,
+        )
+    )
+
+    supplier_duplicate_count = 0
+
+    if "supplier_name" in data.columns:
+        supplier_duplicate_count = int(
+            data["supplier_name"]
+            .duplicated(keep=False)
+            .sum()
+        )
+
+    if transaction_signal_count >= 2:
+        return "Transaction-level spend file"
+
+    if supplier_duplicate_count > 0:
+        return "Likely multi-row supplier spend file"
+
+    return "Supplier-level performance file"
+
+
+def evaluate_analysis_capabilities(
+    data: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Evaluate which analyses can run from the available columns.
+    """
+    minimum_ready, missing_required = (
+        evaluate_minimum_required_columns(data)
+    )
+
+    has_category = "category" in data.columns
+    has_description = "description" in data.columns
+
+    has_prior_spend = "prior_year_spend" in data.columns
+
+    has_delivery = all(
+        column in data.columns
+        for column in [
+            "on_time_delivery_pct",
+            "prior_year_otd_pct",
+        ]
+    )
+
+    has_quality = all(
+        column in data.columns
+        for column in [
+            "defect_rate_pct",
+            "prior_year_defect_rate_pct",
+        ]
+    )
+
+    has_criticality = (
+        "supplier_criticality" in data.columns
+    )
+
+    rows = [
+        {
+            "capability": "Basic spend analysis",
+            "status": (
+                "Available"
+                if minimum_ready
+                else "Unavailable"
+            ),
+            "reason": (
+                "Supplier, spend amount, and classification input found."
+                if minimum_ready
+                else "Missing: " + ", ".join(missing_required)
+            ),
+        },
+        {
+            "capability": "Spend classification",
+            "status": (
+                "Available"
+                if has_category or has_description
+                else "Unavailable"
+            ),
+            "reason": (
+                "Category or description is available."
+                if has_category or has_description
+                else "Missing both category and description."
+            ),
+        },
+        {
+            "capability": "Supplier aggregation",
+            "status": (
+                "Available"
+                if "supplier_name" in data.columns
+                and "annual_spend" in data.columns
+                else "Unavailable"
+            ),
+            "reason": (
+                "Supplier and spend amount fields are available."
+                if "supplier_name" in data.columns
+                and "annual_spend" in data.columns
+                else "Supplier or spend amount is missing."
+            ),
+        },
+        {
+            "capability": "Category concentration",
+            "status": (
+                "Available"
+                if minimum_ready
+                else "Unavailable"
+            ),
+            "reason": (
+                "Spend can be grouped by uploaded or classified category."
+                if minimum_ready
+                else "Minimum required fields are missing."
+            ),
+        },
+        {
+            "capability": "Spend movement analysis",
+            "status": (
+                "Available"
+                if has_prior_spend
+                else "Limited"
+            ),
+            "reason": (
+                "Prior-year spend is available."
+                if has_prior_spend
+                else "Prior-year spend is missing."
+            ),
+        },
+        {
+            "capability": "Delivery deterioration scoring",
+            "status": (
+                "Available"
+                if has_delivery
+                else "Limited"
+            ),
+            "reason": (
+                "Current and prior-year OTD fields are available."
+                if has_delivery
+                else "Current or prior-year OTD field is missing."
+            ),
+        },
+        {
+            "capability": "Quality deterioration scoring",
+            "status": (
+                "Available"
+                if has_quality
+                else "Limited"
+            ),
+            "reason": (
+                "Current and prior-year defect-rate fields are available."
+                if has_quality
+                else "Current or prior-year defect-rate field is missing."
+            ),
+        },
+        {
+            "capability": "Full supplier attention scoring",
+            "status": (
+                "Available"
+                if (
+                    minimum_ready
+                    and has_prior_spend
+                    and has_delivery
+                    and has_quality
+                    and has_criticality
+                )
+                else "Limited"
+            ),
+            "reason": (
+                "Spend, performance, and criticality fields are available."
+                if (
+                    minimum_ready
+                    and has_prior_spend
+                    and has_delivery
+                    and has_quality
+                    and has_criticality
+                )
+                else "Some performance, prior-year, or criticality fields are missing."
+            ),
+        },
+    ]
+
+    return pd.DataFrame(rows)
+
+
 def determine_analysis_status(
-    required_columns_ready: bool,
-    recommended_missing: list[str],
+    minimum_ready: bool,
+    capabilities: pd.DataFrame,
 ) -> str:
     """
     Determine overall readiness status.
     """
-    if not required_columns_ready:
+    if not minimum_ready:
         return "Not Ready"
 
-    if recommended_missing:
+    limited_count = int(
+        (
+            capabilities["status"]
+            == "Limited"
+        ).sum()
+    )
+
+    unavailable_count = int(
+        (
+            capabilities["status"]
+            == "Unavailable"
+        ).sum()
+    )
+
+    if limited_count > 0 or unavailable_count > 0:
         return "Ready with Limitations"
 
     return "Ready"
 
 
 def create_analysis_limitations(
-    required_columns_ready: bool,
-    missing_required: list[str],
-    missing_recommended: list[str],
+    analysis_status: str,
+    capabilities: pd.DataFrame,
 ) -> list[str]:
     """
-    Create human-readable analysis limitations.
+    Create human-readable limitations from capability table.
     """
+    if analysis_status == "Ready":
+        return [
+            "No major readiness limitations detected."
+        ]
+
     limitations = []
 
-    if not required_columns_ready:
-        limitations.append(
-            "The file is missing minimum required fields, so analytics cannot run."
+    limited_or_unavailable = capabilities[
+        capabilities["status"].isin(
+            [
+                "Limited",
+                "Unavailable",
+            ]
         )
+    ]
 
-    if "category or description" in missing_required:
+    for _, row in limited_or_unavailable.iterrows():
         limitations.append(
-            "The file needs either a category column or a description column so spend can be classified."
-        )
-
-    if "prior_year_spend" in missing_recommended:
-        limitations.append(
-            "Spend change analysis will be limited because prior-year spend is missing."
-        )
-
-    missing_delivery_columns = {
-        "on_time_delivery_pct",
-        "prior_year_otd_pct",
-    }.intersection(missing_recommended)
-
-    if missing_delivery_columns:
-        limitations.append(
-            "Delivery deterioration scoring will be limited because current or prior-year delivery data is missing."
-        )
-
-    missing_quality_columns = {
-        "defect_rate_pct",
-        "prior_year_defect_rate_pct",
-    }.intersection(missing_recommended)
-
-    if missing_quality_columns:
-        limitations.append(
-            "Quality deterioration scoring will be limited because current or prior-year defect data is missing."
-        )
-
-    if "supplier_criticality" in missing_recommended:
-        limitations.append(
-            "Supplier criticality scoring will be limited because supplier criticality is missing."
-        )
-
-    if not limitations:
-        limitations.append(
-            "No major readiness limitations detected."
+            f"{row['capability']}: {row['reason']}"
         )
 
     return limitations
+
+
+def summarize_mapping_report(
+    mapping_report: pd.DataFrame | None,
+) -> dict[str, int]:
+    """
+    Summarize mapped, context, and unmapped columns.
+    """
+    if mapping_report is None or mapping_report.empty:
+        return {
+            "mapped_column_count": 0,
+            "context_column_count": 0,
+            "unmapped_column_count": 0,
+            "used_in_analysis_count": 0,
+        }
+
+    mapped_column_count = int(
+        (
+            mapping_report["mapping_status"]
+            == "Mapped"
+        ).sum()
+    )
+
+    context_column_count = int(
+        (
+            mapping_report["column_role"]
+            == "Context"
+        ).sum()
+    )
+
+    unmapped_column_count = int(
+        (
+            mapping_report["mapping_status"]
+            == "Unmapped"
+        ).sum()
+    )
+
+    used_in_analysis_count = int(
+        mapping_report["used_in_analysis"].sum()
+    )
+
+    return {
+        "mapped_column_count": mapped_column_count,
+        "context_column_count": context_column_count,
+        "unmapped_column_count": unmapped_column_count,
+        "used_in_analysis_count": used_in_analysis_count,
+    }
 
 
 def create_column_readiness_table(
     data: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Create a table showing required, recommended, and optional columns.
+    Create a table showing required, classification, scoring,
+    and context columns.
     """
     rows = []
 
-    for column in REQUIRED_COLUMNS:
+    for column in MINIMUM_REQUIRED_COLUMNS:
         rows.append(
             {
                 "column": column,
-                "requirement_level": "Required",
+                "column_group": "Minimum required",
                 "status": (
                     "Present"
                     if column in data.columns
                     else "Missing"
+                ),
+                "why_it_matters": (
+                    "Required for basic supplier spend analysis."
                 ),
             }
         )
@@ -186,40 +440,46 @@ def create_column_readiness_table(
     rows.append(
         {
             "column": "category or description",
-            "requirement_level": "Required",
+            "column_group": "Minimum required",
             "status": (
                 "Present"
-                if any(
-                    column in data.columns
-                    for column in CONDITIONAL_REQUIRED_COLUMNS
-                )
+                if has_classification_input(data)
                 else "Missing"
+            ),
+            "why_it_matters": (
+                "Required to classify or group spend into categories."
             ),
         }
     )
 
-    for column in RECOMMENDED_COLUMNS:
+    for column in FULL_SCORING_COLUMNS:
         rows.append(
             {
                 "column": column,
-                "requirement_level": "Recommended",
+                "column_group": "Full scoring",
                 "status": (
                     "Present"
                     if column in data.columns
                     else "Missing"
                 ),
+                "why_it_matters": (
+                    "Improves supplier attention scoring and findings."
+                ),
             }
         )
 
-    for column in OPTIONAL_COLUMNS:
+    for column in CONTEXT_COLUMNS:
         rows.append(
             {
                 "column": column,
-                "requirement_level": "Optional",
+                "column_group": "Context",
                 "status": (
                     "Present"
                     if column in data.columns
                     else "Missing"
+                ),
+                "why_it_matters": (
+                    "Helpful for filtering, traceability, or future enhancements."
                 ),
             }
         )
@@ -234,56 +494,37 @@ def create_data_readiness_report(
     """
     Create a complete readiness report for uploaded supplier data.
     """
-    required_ready, missing_required = (
-        evaluate_required_columns(data)
+    minimum_ready, missing_required = (
+        evaluate_minimum_required_columns(data)
     )
 
-    missing_recommended = get_missing_columns(
-        data,
-        RECOMMENDED_COLUMNS,
-    )
-
-    present_recommended = get_present_columns(
-        data,
-        RECOMMENDED_COLUMNS,
-    )
-
-    present_optional = get_present_columns(
-        data,
-        OPTIONAL_COLUMNS,
-    )
+    capabilities = evaluate_analysis_capabilities(data)
 
     analysis_status = determine_analysis_status(
-        required_ready,
-        missing_recommended,
+        minimum_ready,
+        capabilities,
     )
 
     limitations = create_analysis_limitations(
-        required_columns_ready=required_ready,
-        missing_required=missing_required,
-        missing_recommended=missing_recommended,
+        analysis_status,
+        capabilities,
     )
 
-    unmapped_column_count = 0
+    mapping_summary = summarize_mapping_report(
+        mapping_report
+    )
 
-    if mapping_report is not None and not mapping_report.empty:
-        unmapped_column_count = int(
-            (
-                mapping_report["mapping_status"]
-                == "Unmapped"
-            ).sum()
-        )
+    input_file_type = detect_input_file_type(data)
 
     return {
         "row_count": len(data),
         "column_count": len(data.columns),
-        "required_columns_ready": required_ready,
-        "missing_required_columns": missing_required,
-        "recommended_columns_present": present_recommended,
-        "recommended_columns_missing": missing_recommended,
-        "optional_columns_present": present_optional,
+        "input_file_type": input_file_type,
         "analysis_status": analysis_status,
+        "minimum_required_ready": minimum_ready,
+        "missing_required_columns": missing_required,
+        "analysis_capabilities": capabilities,
         "analysis_limitations": limitations,
-        "unmapped_column_count": unmapped_column_count,
         "column_readiness_table": create_column_readiness_table(data),
+        **mapping_summary,
     }
