@@ -37,6 +37,10 @@ from src.classification import (
     summarize_classification_coverage,
 )
 
+from src.date_utils import (
+    add_invoice_period_columns,
+    summarize_date_coverage,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -50,13 +54,21 @@ SAMPLE_FILE = (
 
 def prepare_supplier_data(
     raw_data: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, dict, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, dict, pd.DataFrame, dict]:
     """
     Clean, validate, score, and summarize supplier data.
     """
     mapped_data, mapping_report = map_columns(raw_data)
 
     supplier_data = clean_supplier_data(mapped_data)
+
+    supplier_data = add_invoice_period_columns(
+        supplier_data
+    )
+
+    date_summary = summarize_date_coverage(
+        supplier_data
+    )
 
     supplier_data = classify_spend_data(
         supplier_data
@@ -110,6 +122,7 @@ def prepare_supplier_data(
         category_metrics,
         readiness_report,
         mapping_report,
+        date_summary
     )
 
 
@@ -713,6 +726,7 @@ def main() -> None:
             category_metrics,
             readiness_report,
             mapping_report,
+            date_summary,
         ) = prepare_supplier_data(raw_data)
 
     except (
@@ -834,6 +848,47 @@ def main() -> None:
             "Unmapped Columns",
             readiness_report["unmapped_column_count"],
         )
+        st.subheader("Date coverage review")
+
+        if date_summary["has_date_column"]:
+            st.info(
+                "A date column was detected. The app created invoice_year, "
+                "invoice_quarter, and invoice_month fields for future "
+                "time-based analysis."
+            )
+        else:
+            st.warning(
+                "No date column was detected. The app can still analyze total "
+                "uploaded spend, but time-based analysis such as monthly trends "
+                "or year-over-year movement will be limited."
+            )
+
+        date_columns = st.columns(5)
+
+        date_columns[0].metric(
+            "Valid Date Rows",
+            date_summary["valid_date_rows"],
+        )
+
+        date_columns[1].metric(
+            "Invalid/Missing Date Rows",
+            date_summary["invalid_date_rows"],
+        )
+
+        date_columns[2].metric(
+            "Date Coverage",
+            f"{date_summary['date_coverage_pct']}%",
+        )
+
+        date_columns[3].metric(
+            "Earliest Date",
+            date_summary["min_date"] or "N/A",
+        )
+
+        date_columns[4].metric(
+            "Latest Date",
+            date_summary["max_date"] or "N/A",
+        )
 
         classification_columns = st.columns(4)
 
@@ -892,6 +947,11 @@ def main() -> None:
         classification_columns_to_show = [
             "supplier_name",
             "description",
+            "annual_spend",
+            "invoice_date",
+            "invoice_year",
+            "invoice_quarter",
+            "invoice_month",
             "taxonomy_level_1",
             "taxonomy_level_2",
             "classification_confidence",
