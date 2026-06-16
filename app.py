@@ -42,6 +42,12 @@ from src.date_utils import (
     summarize_date_coverage,
 )
 
+from src.aggregation import (
+    aggregate_supplier_category_data,
+    create_aggregation_summary,
+    should_aggregate_supplier_data,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 SAMPLE_FILE = (
@@ -54,7 +60,7 @@ SAMPLE_FILE = (
 
 def prepare_supplier_data(
     raw_data: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, dict, pd.DataFrame, dict]:
+) -> tuple[pd.DataFrame, pd.DataFrame, dict, pd.DataFrame, dict, dict]:
     """
     Clean, validate, score, and summarize supplier data.
     """
@@ -77,6 +83,28 @@ def prepare_supplier_data(
     supplier_data["category"] = supplier_data[
         "analysis_category"
     ]
+
+    aggregation_time_grain = None
+
+    pre_aggregation_data = supplier_data.copy()
+
+    was_aggregated = should_aggregate_supplier_data(
+        supplier_data,
+        time_grain=aggregation_time_grain,
+    )
+
+    if was_aggregated:
+        supplier_data = aggregate_supplier_category_data(
+            supplier_data,
+            time_grain=aggregation_time_grain,
+        )
+
+    aggregation_summary = create_aggregation_summary(
+        before_data=pre_aggregation_data,
+        after_data=supplier_data,
+        was_aggregated=was_aggregated,
+        time_grain=aggregation_time_grain,
+    )
 
     readiness_report = create_data_readiness_report(
         supplier_data,
@@ -122,7 +150,8 @@ def prepare_supplier_data(
         category_metrics,
         readiness_report,
         mapping_report,
-        date_summary
+        date_summary,
+        aggregation_summary,
     )
 
 
@@ -727,6 +756,7 @@ def main() -> None:
             readiness_report,
             mapping_report,
             date_summary,
+            aggregation_summary
         ) = prepare_supplier_data(raw_data)
 
     except (
@@ -910,6 +940,48 @@ def main() -> None:
         classification_columns[3].metric(
             "Classification Coverage",
             f"{classification_summary['classification_coverage_pct']}%",
+        )
+
+        st.subheader("Aggregation review")
+
+        if aggregation_summary["was_aggregated"]:
+            st.info(
+                "The uploaded file contained multiple rows for the same "
+                "supplier/category combination, so the app aggregated it "
+                "before scoring and dashboard analysis."
+            )
+        else:
+            st.success(
+                "No supplier/category aggregation was required for the main "
+                "dashboard view. The file appears to already be supplier-category "
+                "level, or duplicate supplier/category rows were not detected."
+            )
+
+        aggregation_columns = st.columns(5)
+
+        aggregation_columns[0].metric(
+            "Aggregation Grain",
+            aggregation_summary["time_grain"],
+        )
+
+        aggregation_columns[1].metric(
+            "Input Rows",
+            aggregation_summary["input_rows"],
+        )
+
+        aggregation_columns[2].metric(
+            "Rows After Aggregation",
+            aggregation_summary["output_rows"],
+        )
+
+        aggregation_columns[3].metric(
+            "Rows Reduced",
+            aggregation_summary["rows_reduced"],
+        )
+
+        aggregation_columns[4].metric(
+            "Suppliers Detected",
+            aggregation_summary["output_supplier_count"],
         )
 
         st.subheader("Supported upload types")
