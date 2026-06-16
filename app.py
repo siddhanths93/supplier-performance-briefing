@@ -48,6 +48,8 @@ from src.aggregation import (
     should_aggregate_supplier_data,
 )
 
+from src.schema import ensure_optional_analysis_columns
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 SAMPLE_FILE = (
@@ -104,6 +106,10 @@ def prepare_supplier_data(
         after_data=supplier_data,
         was_aggregated=was_aggregated,
         time_grain=aggregation_time_grain,
+    )
+
+    supplier_data = ensure_optional_analysis_columns(
+        supplier_data
     )
 
     readiness_report = create_data_readiness_report(
