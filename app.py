@@ -32,6 +32,12 @@ from src.column_mapping import map_columns
 
 from src.data_readiness import create_data_readiness_report
 
+from src.classification import (
+    classify_spend_data,
+    summarize_classification_coverage,
+)
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 SAMPLE_FILE = (
@@ -51,6 +57,14 @@ def prepare_supplier_data(
     mapped_data, mapping_report = map_columns(raw_data)
 
     supplier_data = clean_supplier_data(mapped_data)
+
+    supplier_data = classify_spend_data(
+        supplier_data
+    )
+
+    supplier_data["category"] = supplier_data[
+        "analysis_category"
+    ]
 
     readiness_report = create_data_readiness_report(
         supplier_data,
@@ -763,6 +777,10 @@ def main() -> None:
         filtered_category_metrics
     )
 
+    classification_summary = summarize_classification_coverage(
+        filtered_supplier_data
+    )
+
     readiness_tab, overview_tab, supplier_tab, findings_tab, methodology_tab = st.tabs(
         [
             "Data Readiness",
@@ -817,6 +835,28 @@ def main() -> None:
             readiness_report["unmapped_column_count"],
         )
 
+        classification_columns = st.columns(4)
+
+        classification_columns[0].metric(
+            "Classified Rows",
+            classification_summary["classified_rows"],
+        )
+
+        classification_columns[1].metric(
+            "Unclassified Rows",
+            classification_summary["unclassified_rows"],
+        )
+
+        classification_columns[2].metric(
+            "Review Required",
+            classification_summary["review_required_rows"],
+        )
+
+        classification_columns[3].metric(
+            "Classification Coverage",
+            f"{classification_summary['classification_coverage_pct']}%",
+        )
+
         st.subheader("Supported upload types")
 
         st.write(
@@ -843,6 +883,32 @@ def main() -> None:
 
         st.dataframe(
             readiness_report["analysis_capabilities"],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.subheader("Classification sample")
+
+        classification_columns_to_show = [
+            "supplier_name",
+            "description",
+            "taxonomy_level_1",
+            "taxonomy_level_2",
+            "classification_confidence",
+            "classification_reason",
+            "needs_classification_review",
+        ]
+
+        available_classification_columns = [
+            column
+            for column in classification_columns_to_show
+            if column in filtered_supplier_data.columns
+        ]
+
+        st.dataframe(
+            filtered_supplier_data[
+                available_classification_columns
+            ].head(25),
             use_container_width=True,
             hide_index=True,
         )
