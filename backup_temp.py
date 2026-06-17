@@ -26,6 +26,7 @@ from src.schema import ensure_optional_analysis_columns
 
 st.set_page_config(
     page_title="Supplier Performance & Spend Intelligence",
+    page_icon="📊",
     layout="wide",
 )
 
@@ -214,71 +215,35 @@ def make_display_table(data: pd.DataFrame) -> pd.DataFrame:
     ]
     return display_data
 
-def prepare_opportunity_display_table(opportunities: pd.DataFrame) -> pd.DataFrame:
-    display_data = opportunities.copy()
-    display_data = display_data.loc[:, ~display_data.columns.duplicated()]
-
-    currency_columns = [
-        "total_spend",
-        "estimated_savings_low",
-        "estimated_savings_high",
-    ]
-
-    for column in currency_columns:
-        if column in display_data.columns:
-            display_data[column] = display_data[column].apply(format_currency)
-
-    if "estimated_savings_range" in display_data.columns:
-        display_data["estimated_savings_range"] = display_data[
-            "estimated_savings_range"
-        ].astype(str)
-
-    return make_display_table(display_data)
 
 # -------------------------------------------------------------------
 # Chart helpers
 # -------------------------------------------------------------------
 
-def apply_chart_layout(fig, height: int = 390):
+def apply_chart_layout(fig, height: int = 420):
     fig.update_layout(
         height=height,
-        margin=dict(l=20, r=20, t=55, b=20),
+        margin=dict(l=20, r=20, t=60, b=30),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(size=12),
-        title=dict(font=dict(size=17)),
+        font=dict(size=13),
+        title=dict(font=dict(size=18)),
         legend=dict(
             orientation="h",
-            yanchor="top",
-            y=-0.08,
+            yanchor="bottom",
+            y=-0.25,
             xanchor="center",
             x=0.5,
         ),
     )
-
-    fig.update_xaxes(
-        showgrid=True,
-        gridcolor="#e5e7eb",
-        zeroline=False,
-    )
-
-    fig.update_yaxes(
-        showgrid=False,
-        zeroline=False,
-    )
-
     return fig
 
 
-def show_chart_or_message(fig, message: str, key: str):
+def show_chart_or_message(fig, message: str):
     if fig is None:
         st.info(message)
     else:
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
-            key=key,
-        )
+        st.plotly_chart(fig, use_container_width=True)
 
 
 def create_top_suppliers_chart(data: pd.DataFrame):
@@ -491,7 +456,7 @@ def create_opportunity_savings_chart(opportunities: pd.DataFrame):
     if not required_columns.issubset(opportunities.columns):
         return None
 
-    wide_data = (
+    chart_data = (
         opportunities.groupby("category", dropna=False)[
             ["estimated_savings_low", "estimated_savings_high"]
         ]
@@ -502,43 +467,22 @@ def create_opportunity_savings_chart(opportunities: pd.DataFrame):
         .sort_values(by="estimated_savings_high", ascending=True)
     )
 
-    chart_data = wide_data.melt(
-        id_vars="category",
-        value_vars=[
-            "estimated_savings_low",
-            "estimated_savings_high",
-        ],
-        var_name="estimate_type",
-        value_name="estimated_savings",
-    )
-
-    chart_data["estimate_type"] = chart_data["estimate_type"].replace(
-        {
-            "estimated_savings_low": "Low estimate",
-            "estimated_savings_high": "High estimate",
-        }
-    )
-
     fig = px.bar(
         chart_data,
-        x="estimated_savings",
+        x=["estimated_savings_low", "estimated_savings_high"],
         y="category",
-        color="estimate_type",
         orientation="h",
         barmode="group",
         title="Estimated Savings Range by Category",
         labels={
-            "estimated_savings": "Estimated Savings",
+            "value": "Estimated Savings",
             "category": "Category",
-            "estimate_type": "Savings Estimate",
+            "variable": "Savings Estimate",
         },
     )
 
-    fig.update_layout(
-        legend_title_text="Savings Estimate",
-    )
-
     return apply_chart_layout(fig)
+
 
 def create_opportunity_type_chart(opportunities: pd.DataFrame):
     if opportunities.empty or "opportunity_type" not in opportunities.columns:
@@ -717,13 +661,8 @@ def create_rationalization_opportunities(
             savings_low = total_spend * low_pct
             savings_high = total_spend * high_pct
 
-            target_supplier_count = max(
-                2,
-                round(supplier_count * 0.6),
-            )
-
             suggested_reduction = max(
-                supplier_count - target_supplier_count,
+                supplier_count - max(2, round(supplier_count * 0.6)),
                 1,
             )
 
@@ -734,10 +673,8 @@ def create_rationalization_opportunities(
                     "current_suppliers": supplier_count,
                     "total_spend": total_spend,
                     "suggested_supplier_reduction": suggested_reduction,
-                    "suggested_target_suppliers": target_supplier_count,
                     "rationale": (
-                        f"{category} has {supplier_count} suppliers. A focused preferred-supplier review "
-                        f"could target approximately {target_supplier_count} suppliers while maintaining coverage."
+                        f"{category} has {supplier_count} suppliers, indicating potential fragmentation."
                     ),
                     "estimated_savings_low": savings_low,
                     "estimated_savings_high": savings_high,
@@ -750,7 +687,7 @@ def create_rationalization_opportunities(
                         "Fragmented category",
                     ),
                     "next_action": (
-                        f"Segment {category} suppliers by spend, region, and service overlap; identify preferred suppliers and transition tail suppliers where feasible."
+                        f"Review supplier overlap in {category} and identify preferred suppliers."
                     ),
                 }
             )
@@ -894,7 +831,7 @@ def summarize_opportunity_pipeline(
 
 
 def create_procurement_recommendations(
-    opportunities: pd.DataFrame,
+        opportunities: pd.DataFrame,
 ) -> list[dict]:
     if opportunities.empty:
         return [
@@ -922,91 +859,46 @@ def create_procurement_recommendations(
     for _, row in opportunities.head(8).iterrows():
         category = row["category"]
         opportunity_type = row["opportunity_type"]
-        supplier_count = int(row.get("current_suppliers", 0))
-        target_suppliers = row.get("suggested_target_suppliers", None)
 
         if opportunity_type == "Fragmented category":
-            if pd.notna(target_suppliers):
-                recommendation = (
-                    f"Launch a preferred-supplier review for {category} and evaluate moving "
-                    f"from {supplier_count} suppliers toward about {int(target_suppliers)} core suppliers."
-                )
-            else:
-                recommendation = (
-                    f"Launch a preferred-supplier review for {category}."
-                )
-
-            why_it_matters = (
-                f"{category} has a broad supplier base relative to the spend profile, "
-                "which suggests possible overlap across suppliers, regions, or business units."
+            recommendation = (
+                f"Rationalize suppliers in {category} by narrowing the supplier base "
+                f"from {row['current_suppliers']} suppliers."
             )
-
-            expected_benefit = (
-                "Better buying leverage and a clearer preferred-supplier model."
+            benefit = (
+                "Reduced fragmentation, stronger negotiation leverage, and easier supplier governance."
             )
-
-            next_action = (
-                f"Segment {category} suppliers into strategic, preferred, and tail groups; "
-                "then validate which suppliers can be consolidated without reducing business coverage."
-            )
-
             difficulty = "Medium"
 
         elif opportunity_type == "Tail spend cleanup":
             recommendation = (
-                f"Create a tail-spend cleanup plan for low-spend {category} suppliers."
+                f"Clean up tail spend in {category} by consolidating low-spend suppliers."
             )
-
-            why_it_matters = (
-                f"{category} contains low-spend suppliers that may be creating more process cost "
-                "than sourcing value."
+            benefit = (
+                "Lower administrative effort, reduced supplier count, and improved catalog compliance."
             )
-
-            expected_benefit = (
-                "Reduced vendor maintenance, simpler buying channels, and better policy compliance."
-            )
-
-            next_action = (
-                f"Move recurring low-value {category} purchases to catalogs, P-cards, blanket POs, "
-                "or an existing preferred supplier."
-            )
-
             difficulty = "Low"
 
         elif opportunity_type == "No contract coverage":
             recommendation = (
-                f"Prioritize contract coverage review for {category}."
+                f"Review contract coverage in {category} and negotiate pricing or terms where contracts are missing."
             )
-
-            why_it_matters = (
-                f"{category} includes spend that may not be governed by active pricing, terms, "
-                "or service-level agreements."
+            benefit = (
+                "Improved commercial control and reduced unmanaged spend exposure."
             )
-
-            expected_benefit = (
-                "Improved commercial control and reduced pricing or terms leakage."
-            )
-
-            next_action = (
-                f"Validate contract coverage for {category}, then prioritize suppliers for renewal, "
-                "renegotiation, or formal sourcing."
-            )
-
             difficulty = "Medium"
 
         else:
             recommendation = f"Review sourcing opportunity in {category}."
-            why_it_matters = row["rationale"]
-            expected_benefit = "Potential savings and better supplier management."
-            next_action = row["next_action"]
+            benefit = "Potential savings and better supplier management."
             difficulty = "Medium"
 
         recommendations.append(
             {
                 "recommendation": recommendation,
-                "why_it_matters": why_it_matters,
-                "expected_benefit": expected_benefit,
-                "next_action": next_action,
+                "why_it_matters": row["rationale"],
+                "expected_benefit": benefit,
+                "next_action": row["next_action"],
                 "difficulty": difficulty,
                 "priority": row["priority"],
                 "estimated_savings_range": row["estimated_savings_range"],
@@ -1015,129 +907,22 @@ def create_procurement_recommendations(
 
     return recommendations
 
+
 # -------------------------------------------------------------------
 # Processing helpers
 # -------------------------------------------------------------------
 
-def score_uploaded_sheet(data: pd.DataFrame) -> int:
-    """
-    Score a sheet based on whether it looks like transaction-level spend data.
-    Higher score = better candidate for analysis.
-    """
-    if data.empty:
-        return 0
-
-    normalized_columns = [
-        str(column).strip().lower().replace("_", " ")
-        for column in data.columns
-    ]
-
-    score = 0
-
-    supplier_signals = [
-        "supplier name",
-        "supplier",
-        "vendor name",
-        "vendor",
-    ]
-
-    spend_signals = [
-        "spend amount usd",
-        "spend amount",
-        "invoice amount",
-        "po amount",
-        "amount",
-        "total spend",
-        "original currency amount",
-    ]
-
-    description_signals = [
-        "item description",
-        "description",
-        "transaction description",
-    ]
-
-    date_signals = [
-        "invoice date",
-        "posting date",
-        "transaction date",
-    ]
-
-    category_signals = [
-        "category",
-        "category l1",
-        "category l2",
-        "commodity",
-        "subcategory",
-    ]
-
-    for column in normalized_columns:
-        if column in supplier_signals:
-            score += 30
-        if column in spend_signals:
-            score += 30
-        if column in description_signals:
-            score += 15
-        if column in date_signals:
-            score += 10
-        if column in category_signals:
-            score += 10
-
-    # Real spend tabs usually have many rows.
-    if len(data) > 20:
-        score += 10
-
-    return score
-
-
 def load_uploaded_data(uploaded_file) -> pd.DataFrame:
-    """
-    Load CSV or Excel upload.
-
-    For multi-sheet Excel files, automatically choose the sheet that
-    looks most like spend transaction data.
-    """
     file_name = uploaded_file.name.lower()
 
     if file_name.endswith(".csv"):
         return pd.read_csv(uploaded_file)
 
     if file_name.endswith(".xlsx") or file_name.endswith(".xls"):
-        excel_file = pd.ExcelFile(uploaded_file)
+        return pd.read_excel(uploaded_file)
 
-        best_sheet_name = None
-        best_sheet_data = None
-        best_score = -1
+    raise ValueError("Unsupported file type. Please upload a CSV or Excel file.")
 
-        for sheet_name in excel_file.sheet_names:
-            candidate_data = pd.read_excel(
-                uploaded_file,
-                sheet_name=sheet_name,
-            )
-
-            candidate_score = score_uploaded_sheet(
-                candidate_data
-            )
-
-            if candidate_score > best_score:
-                best_score = candidate_score
-                best_sheet_name = sheet_name
-                best_sheet_data = candidate_data
-
-        if best_sheet_data is None:
-            raise ValueError(
-                "No readable sheet found in the uploaded Excel file."
-            )
-
-        st.sidebar.success(
-            f"Using Excel sheet: {best_sheet_name}"
-        )
-
-        return best_sheet_data
-
-    raise ValueError(
-        "Unsupported file type. Please upload a CSV or Excel file."
-    )
 
 def create_category_metrics(data: pd.DataFrame) -> pd.DataFrame:
     if (
@@ -1548,7 +1333,7 @@ def main():
             else 0
         )
 
-        summary_columns = st.columns(6)
+        summary_columns = st.columns(5)
 
         summary_columns[0].metric(
             "Total spend analyzed",
@@ -1571,13 +1356,8 @@ def main():
         )
 
         summary_columns[4].metric(
-            "Savings low",
-            format_currency(opportunity_summary["estimated_savings_low"]),
-        )
-
-        summary_columns[5].metric(
-            "Savings high",
-            format_currency(opportunity_summary["estimated_savings_high"]),
+            "Est. savings range",
+            f"{format_currency(opportunity_summary['estimated_savings_low'])} - {format_currency(opportunity_summary['estimated_savings_high'])}",
         )
 
         st.markdown(
@@ -1599,14 +1379,12 @@ def main():
             show_chart_or_message(
                 create_top_categories_chart(filtered_supplier_data),
                 "Category spend chart is not available for this file.",
-                key="executive_top_categories_chart",
             )
 
         with right_chart_column:
             show_chart_or_message(
                 create_opportunity_savings_chart(rationalization_opportunities),
                 "Savings opportunity chart is not available yet.",
-                key="executive_opportunity_savings_chart",
             )
 
         st.divider()
@@ -1621,12 +1399,13 @@ def main():
                 f"""
                 <div class="section-card">
                     <h4>{index}. {recommendation["recommendation"]}</h4>
-                    <p><strong>Rationale:</strong> {recommendation["why_it_matters"]}</p>
-                    <p><strong>Procurement action:</strong> {recommendation["next_action"]}</p>
+                    <p><strong>Why this matters:</strong> {recommendation["why_it_matters"]}</p>
+                    <p><strong>Expected benefit:</strong> {recommendation["expected_benefit"]}</p>
+                    <p><strong>Next action:</strong> {recommendation["next_action"]}</p>
                     <p>
-                        <strong>Impact:</strong> {recommendation["estimated_savings_range"]} potential savings &nbsp; | &nbsp;
-                        <strong>{recommendation["priority"]}</strong> priority &nbsp; | &nbsp;
-                        {recommendation["difficulty"]} difficulty
+                        <strong>Estimated savings:</strong> {recommendation["estimated_savings_range"]} &nbsp; | &nbsp;
+                        <strong>Priority:</strong> {recommendation["priority"]} &nbsp; | &nbsp;
+                        <strong>Difficulty:</strong> {recommendation["difficulty"]}
                     </p>
                 </div>
                 """,
@@ -1669,14 +1448,12 @@ def main():
             show_chart_or_message(
                 create_top_suppliers_chart(filtered_supplier_data),
                 "Top supplier chart is not available for this file.",
-                key="spend_top_suppliers_chart",
             )
 
         with chart_column_2:
             show_chart_or_message(
                 create_top_categories_chart(filtered_supplier_data),
                 "Top category chart is not available for this file.",
-                key="spend_top_categories_chart",
             )
 
         st.divider()
@@ -1687,14 +1464,12 @@ def main():
             show_chart_or_message(
                 create_supplier_count_by_category_chart(filtered_supplier_data),
                 "Supplier count by category chart is not available for this file.",
-                key="spend_supplier_count_by_category_chart",
             )
 
         with chart_column_4:
             show_chart_or_message(
                 create_monthly_spend_trend_chart(filtered_supplier_data),
                 "Spend trend chart is not available because usable date fields were not found.",
-                key="spend_monthly_trend_chart",
             )
 
         st.divider()
@@ -1705,14 +1480,12 @@ def main():
             show_chart_or_message(
                 create_spend_by_region_chart(filtered_supplier_data),
                 "Spend by region chart is not available for this file.",
-                key="spend_by_region_chart",
             )
 
         with chart_column_6:
             show_chart_or_message(
                 create_spend_by_business_unit_chart(filtered_supplier_data),
                 "Spend by business unit chart is not available for this file.",
-                key="spend_by_business_unit_chart",
             )
 
         st.divider()
@@ -1798,14 +1571,12 @@ def main():
                 show_chart_or_message(
                     create_opportunity_savings_chart(rationalization_opportunities),
                     "Savings by category chart is not available.",
-                    key="rationalization_opportunity_savings_chart",
                 )
 
             with right_opportunity_chart:
                 show_chart_or_message(
                     create_opportunity_type_chart(rationalization_opportunities),
                     "Opportunity mix chart is not available.",
-                    key="rationalization_opportunity_type_chart",
                 )
 
             st.divider()
@@ -1813,21 +1584,19 @@ def main():
             show_chart_or_message(
                 create_priority_chart(rationalization_opportunities),
                 "Priority chart is not available.",
-                key="rationalization_priority_chart",
             )
 
             st.divider()
 
-            st.subheader("Prioritized opportunity pipeline")
+            st.subheader("Opportunity detail")
 
             opportunity_display_columns = [
                 "priority",
                 "opportunity_type",
                 "category",
                 "current_suppliers",
-                "suggested_supplier_reduction",
-                "suggested_target_suppliers",
                 "total_spend",
+                "suggested_supplier_reduction",
                 "estimated_savings_range",
                 "rationale",
                 "next_action",
@@ -1840,7 +1609,7 @@ def main():
             ]
 
             st.dataframe(
-                prepare_opportunity_display_table(
+                make_display_table(
                     rationalization_opportunities[
                         available_opportunity_display_columns
                     ]
@@ -1887,14 +1656,12 @@ def main():
             show_chart_or_message(
                 create_opportunity_savings_chart(rationalization_opportunities),
                 "Savings chart is not available.",
-                key="savings_opportunity_savings_chart",
             )
 
         with right_savings_chart:
             show_chart_or_message(
                 create_priority_chart(rationalization_opportunities),
                 "Priority chart is not available.",
-                key="savings_priority_chart",
             )
 
         st.divider()
@@ -1907,12 +1674,13 @@ def main():
                 f"""
                 <div class="section-card">
                     <h4>{index}. {recommendation["recommendation"]}</h4>
-                    <p><strong>Rationale:</strong> {recommendation["why_it_matters"]}</p>
-                    <p><strong>Procurement action:</strong> {recommendation["next_action"]}</p>
+                    <p><strong>Why this matters:</strong> {recommendation["why_it_matters"]}</p>
+                    <p><strong>Expected benefit:</strong> {recommendation["expected_benefit"]}</p>
+                    <p><strong>Suggested next action:</strong> {recommendation["next_action"]}</p>
                     <p>
-                        <strong>Impact:</strong> {recommendation["estimated_savings_range"]} potential savings &nbsp; | &nbsp;
-                        <strong>{recommendation["priority"]}</strong> priority &nbsp; | &nbsp;
-                        {recommendation["difficulty"]} difficulty
+                        <strong>Savings range:</strong> {recommendation["estimated_savings_range"]} &nbsp; | &nbsp;
+                        <strong>Priority:</strong> {recommendation["priority"]} &nbsp; | &nbsp;
+                        <strong>Difficulty:</strong> {recommendation["difficulty"]}
                     </p>
                 </div>
                 """,

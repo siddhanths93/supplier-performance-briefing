@@ -25,6 +25,7 @@ COLUMN_ROLES = {
     "buyer": "Context",
     "payment_terms": "Context",
     "gl_account": "Context",
+    "currency": "Context",
     "lead_time_days": "Context",
 }
 
@@ -87,6 +88,14 @@ COLUMN_ALIASES = {
         "category name",
         "material group",
         "item category",
+        "category l1",
+        "category_l1",
+        "category level 1",
+        "category_level_1",
+        "category l2",
+        "category_l2",
+        "category level 2",
+        "category_level_2",
     ],
     "description": [
         "description",
@@ -99,6 +108,12 @@ COLUMN_ALIASES = {
         "commodity description",
         "material description",
         "product description",
+        "service description",
+        "item_description",
+        "item description",
+        "transaction description",
+        "line item description",
+        "material description",
         "service description",
     ],
     "annual_spend": [
@@ -118,6 +133,16 @@ COLUMN_ALIASES = {
         "line amount",
         "actual spend",
         "spend amount",
+        "spend amount usd",
+        "spend_amount_usd",
+        "amount usd",
+        "usd amount",
+        "usd spend",
+        "total spend usd",
+        "invoice amount usd",
+        "transaction amount usd",
+        "original currency amount",
+        "original_currency_amount",
     ],
     "prior_year_spend": [
         "prior year spend",
@@ -251,6 +276,13 @@ COLUMN_ALIASES = {
         "supplier terms",
         "vendor terms",
     ],
+    "currency": [
+        "currency",
+        "transaction currency",
+        "document currency",
+        "invoice currency",
+        "original currency",
+    ],
     "gl_account": [
         "gl account",
         "gl_account",
@@ -341,6 +373,21 @@ def map_columns(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     used_canonical_columns = set()
 
+    preferred_original_columns = {
+        "annual_spend": [
+            "spend amount usd",
+            "spend_amount_usd",
+            "total spend usd",
+            "invoice amount usd",
+            "transaction amount usd",
+            "spend amount",
+            "invoice amount",
+            "amount",
+            "original currency amount",
+            "original_currency_amount",
+        ]
+    }
+
     for original_column in data.columns:
         normalized_column = normalize_column_name(
             original_column
@@ -350,10 +397,20 @@ def map_columns(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             normalized_column
         )
 
-        if (
-            canonical_column is not None
-            and canonical_column not in used_canonical_columns
-        ):
+        if canonical_column is None:
+            report_rows.append(
+                {
+                    "original_column": original_column,
+                    "normalized_column": normalized_column,
+                    "mapped_column": "",
+                    "column_role": "Unmapped",
+                    "used_in_analysis": False,
+                    "mapping_status": "Unmapped",
+                }
+            )
+            continue
+
+        if canonical_column not in used_canonical_columns:
             rename_mapping[original_column] = canonical_column
             used_canonical_columns.add(canonical_column)
 
@@ -369,30 +426,77 @@ def map_columns(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                     "mapping_status": "Mapped",
                 }
             )
+            continue
 
-        elif canonical_column is not None:
-            report_rows.append(
-                {
-                    "original_column": original_column,
-                    "normalized_column": normalized_column,
-                    "mapped_column": canonical_column,
-                    "column_role": get_column_role(canonical_column),
-                    "used_in_analysis": False,
-                    "mapping_status": "Duplicate ignored",
-                }
+        # If we already mapped annual_spend but later find a better spend column,
+        # replace the earlier mapping.
+        if canonical_column == "annual_spend":
+            preferred_columns = preferred_original_columns["annual_spend"]
+
+            current_original_column = None
+
+            for source_column, mapped_column in rename_mapping.items():
+                if mapped_column == "annual_spend":
+                    current_original_column = source_column
+                    break
+
+            current_rank = (
+                preferred_columns.index(
+                    normalize_column_name(current_original_column)
+                )
+                if current_original_column is not None
+                   and normalize_column_name(current_original_column) in preferred_columns
+                else 999
             )
 
-        else:
-            report_rows.append(
-                {
-                    "original_column": original_column,
-                    "normalized_column": normalized_column,
-                    "mapped_column": "",
-                    "column_role": "Unmapped",
-                    "used_in_analysis": False,
-                    "mapping_status": "Unmapped",
-                }
+            new_rank = (
+                preferred_columns.index(normalized_column)
+                if normalized_column in preferred_columns
+                else 999
             )
+
+            if new_rank < current_rank:
+                if current_original_column in rename_mapping:
+                    del rename_mapping[current_original_column]
+
+                rename_mapping[original_column] = "annual_spend"
+
+                report_rows.append(
+                    {
+                        "original_column": original_column,
+                        "normalized_column": normalized_column,
+                        "mapped_column": canonical_column,
+                        "column_role": get_column_role(canonical_column),
+                        "used_in_analysis": is_column_used_in_analysis(
+                            canonical_column
+                        ),
+                        "mapping_status": "Mapped",
+                    }
+                )
+            else:
+                report_rows.append(
+                    {
+                        "original_column": original_column,
+                        "normalized_column": normalized_column,
+                        "mapped_column": canonical_column,
+                        "column_role": get_column_role(canonical_column),
+                        "used_in_analysis": False,
+                        "mapping_status": "Duplicate ignored",
+                    }
+                )
+
+            continue
+
+        report_rows.append(
+            {
+                "original_column": original_column,
+                "normalized_column": normalized_column,
+                "mapped_column": canonical_column,
+                "column_role": get_column_role(canonical_column),
+                "used_in_analysis": False,
+                "mapping_status": "Duplicate ignored",
+            }
+        )
 
     mapped_data = data.rename(
         columns=rename_mapping

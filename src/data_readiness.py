@@ -31,6 +31,7 @@ CONTEXT_COLUMNS = [
     "country",
     "contract_status",
     "payment_terms",
+    "currency",
     "gl_account",
     "lead_time_days",
 ]
