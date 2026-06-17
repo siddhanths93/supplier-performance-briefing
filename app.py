@@ -1513,17 +1513,25 @@ def main():
 
     st.markdown(
         """
-        <div class="hero-card">
-            <h2>Supplier Performance & Spend Intelligence Dashboard</h2>
-            <p>
-            Upload supplier spend or performance data to identify where money is going,
-            classify suppliers, detect rationalization opportunities, estimate savings,
-            and generate procurement next actions.
-            </p>
-            <p>
-            <strong>Portfolio demo:</strong> Python, Streamlit, Pandas, Plotly, OpenPyXL, and Pytest.
-            </p>
-        </div>
+    <div class="hero-card">
+      <div style="text-transform: uppercase; letter-spacing: 0.35em; font-size: 0.78rem; color: #93c5fd; margin-bottom: 0.85rem; font-weight: 700;">
+        Sid&apos;s Portfolio
+      </div>
+
+      <h2 style="color: white; margin-bottom: 0.7rem; font-size: 2rem; font-weight: 800;">
+        Supplier Performance &amp; Spend Intelligence Dashboard
+      </h2>
+
+      <p style="color: #dbeafe; font-size: 1rem; line-height: 1.6; margin-bottom: 0.8rem;">
+        Upload supplier spend or performance data to identify where money is going,
+        classify suppliers, detect rationalization opportunities, estimate savings,
+        and generate procurement next actions.
+      </p>
+
+      <p style="color: #dbeafe; font-size: 1rem; line-height: 1.6;">
+        <strong>Portfolio demo:</strong> Python, Streamlit, Pandas, Plotly, OpenPyXL, and Pytest.
+      </p>
+    </div>
         """,
         unsafe_allow_html=True,
     )
