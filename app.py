@@ -235,6 +235,55 @@ def prepare_opportunity_display_table(opportunities: pd.DataFrame) -> pd.DataFra
 
     return make_display_table(display_data)
 
+def render_recommendation_card(
+    recommendation: dict,
+    index: int,
+):
+    st.markdown(
+        f"""
+        <div class="section-card">
+            <h4>{index}. {recommendation["initiative"]}</h4>
+            <p><strong>Recommendation:</strong> {recommendation["recommendation"]}</p>
+            <p><strong>Rationale:</strong> {recommendation["rationale"]}</p>
+            <p><strong>Procurement action:</strong> {recommendation["procurement_action"]}</p>
+            <p>
+                <strong>Impact:</strong> {recommendation["estimated_savings_range"]} potential savings &nbsp; | &nbsp;
+                <strong>{recommendation["priority"]}</strong> priority &nbsp; | &nbsp;
+                {recommendation["difficulty"]} difficulty
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    categories = recommendation.get("categories", [])
+
+    if categories:
+        category_table = pd.DataFrame(categories)
+
+        display_columns = [
+            "category",
+            "current_suppliers",
+            "target_suppliers",
+            "estimated_savings_range",
+            "priority",
+        ]
+
+        available_columns = [
+            column
+            for column in display_columns
+            if column in category_table.columns
+        ]
+
+        with st.expander(
+            f"View categories included in {recommendation['initiative']}"
+        ):
+            st.dataframe(
+                make_display_table(category_table[available_columns]),
+                use_container_width=True,
+                hide_index=True,
+            )
+
 # -------------------------------------------------------------------
 # Chart helpers
 # -------------------------------------------------------------------
@@ -526,7 +575,7 @@ def create_opportunity_savings_chart(opportunities: pd.DataFrame):
         color="estimate_type",
         orientation="h",
         barmode="group",
-        title="Estimated Savings Range by Category",
+        title="Top Categories by Estimated Savings Potential",
         labels={
             "estimated_savings": "Estimated Savings",
             "category": "Category",
@@ -899,122 +948,201 @@ def create_procurement_recommendations(
     if opportunities.empty:
         return [
             {
+                "initiative": "Improve spend data completeness",
                 "recommendation": (
-                    "Improve spend file completeness before deeper sourcing analysis."
+                    "Improve the uploaded spend file before deeper sourcing analysis."
                 ),
-                "why_it_matters": (
-                    "The uploaded file may have limited category, supplier, contract, or transaction detail."
+                "rationale": (
+                    "The file may have limited supplier, category, contract, or transaction-level detail."
+                ),
+                "procurement_action": (
+                    "Add category, business unit, region, contract status, payment terms, "
+                    "transaction date, and supplier identifiers where available."
                 ),
                 "expected_benefit": (
                     "Better classification, richer sourcing insights, and stronger savings estimates."
                 ),
-                "next_action": (
-                    "Upload category, business unit, region, contract status, payment terms, and transaction date where available."
-                ),
-                "difficulty": "Low",
-                "priority": "Medium",
+                "categories": [],
                 "estimated_savings_range": "Not estimated",
+                "priority": "Medium",
+                "difficulty": "Low",
             }
         ]
 
     recommendations = []
 
-    for _, row in opportunities.head(8).iterrows():
-        category = row["category"]
-        opportunity_type = row["opportunity_type"]
-        supplier_count = int(row.get("current_suppliers", 0))
-        target_suppliers = row.get("suggested_target_suppliers", None)
+    grouped_opportunities = opportunities.groupby(
+        "opportunity_type",
+        dropna=False,
+    )
+
+    for opportunity_type, group in grouped_opportunities:
+        group = group.sort_values(
+            by="estimated_savings_high",
+            ascending=False,
+        )
+
+        total_low = float(group["estimated_savings_low"].sum())
+        total_high = float(group["estimated_savings_high"].sum())
+
+        high_priority_count = int(
+            (group["priority"] == "High").sum()
+        )
+
+        priority = (
+            "High"
+            if high_priority_count > 0
+            else "Medium"
+            if len(group) >= 2
+            else "Low"
+        )
+
+        category_rows = []
+
+        for _, row in group.head(8).iterrows():
+            category_rows.append(
+                {
+                    "category": row["category"],
+                    "current_suppliers": int(row.get("current_suppliers", 0)),
+                    "target_suppliers": (
+                        int(row["suggested_target_suppliers"])
+                        if "suggested_target_suppliers" in row
+                        and pd.notna(row["suggested_target_suppliers"])
+                        else None
+                    ),
+                    "estimated_savings_range": row["estimated_savings_range"],
+                    "priority": row["priority"],
+                }
+            )
 
         if opportunity_type == "Fragmented category":
-            if pd.notna(target_suppliers):
-                recommendation = (
-                    f"Launch a preferred-supplier review for {category} and evaluate moving "
-                    f"from {supplier_count} suppliers toward about {int(target_suppliers)} core suppliers."
-                )
-            else:
-                recommendation = (
-                    f"Launch a preferred-supplier review for {category}."
-                )
+            initiative = "Preferred supplier rationalization"
 
-            why_it_matters = (
-                f"{category} has a broad supplier base relative to the spend profile, "
-                "which suggests possible overlap across suppliers, regions, or business units."
+            recommendation = (
+                "Launch a preferred-supplier rationalization program across fragmented categories."
+            )
+
+            rationale = (
+                "Several categories have broad supplier bases, which may dilute buying leverage, "
+                "increase supplier management effort, and make it harder to enforce preferred buying channels."
+            )
+
+            procurement_action = (
+                "Prioritize the largest fragmented categories, segment suppliers by spend and business coverage, "
+                "then define preferred suppliers while protecting operational continuity."
             )
 
             expected_benefit = (
-                "Better buying leverage and a clearer preferred-supplier model."
-            )
-
-            next_action = (
-                f"Segment {category} suppliers into strategic, preferred, and tail groups; "
-                "then validate which suppliers can be consolidated without reducing business coverage."
+                "Stronger negotiation leverage, simpler supplier governance, and reduced long-tail complexity."
             )
 
             difficulty = "Medium"
 
         elif opportunity_type == "Tail spend cleanup":
+            initiative = "Tail spend cleanup"
+
             recommendation = (
-                f"Create a tail-spend cleanup plan for low-spend {category} suppliers."
+                "Create a tail-spend cleanup workstream for low-spend suppliers."
             )
 
-            why_it_matters = (
-                f"{category} contains low-spend suppliers that may be creating more process cost "
-                "than sourcing value."
+            rationale = (
+                "Low-spend suppliers can create disproportionate process cost through vendor maintenance, "
+                "PO processing, fragmented buying, and compliance leakage."
+            )
+
+            procurement_action = (
+                "Move recurring low-value purchases to catalogs, preferred suppliers, P-cards, blanket POs, "
+                "or buying channels with lighter governance."
             )
 
             expected_benefit = (
-                "Reduced vendor maintenance, simpler buying channels, and better policy compliance."
-            )
-
-            next_action = (
-                f"Move recurring low-value {category} purchases to catalogs, P-cards, blanket POs, "
-                "or an existing preferred supplier."
+                "Lower administrative effort, cleaner supplier master data, and improved buying compliance."
             )
 
             difficulty = "Low"
 
         elif opportunity_type == "No contract coverage":
+            initiative = "Contract coverage review"
+
             recommendation = (
-                f"Prioritize contract coverage review for {category}."
+                "Review categories with apparent contract coverage gaps."
             )
 
-            why_it_matters = (
-                f"{category} includes spend that may not be governed by active pricing, terms, "
-                "or service-level agreements."
+            rationale = (
+                "Spend without active contract coverage may be exposed to pricing leakage, weak terms, "
+                "unclear service levels, or inconsistent supplier governance."
+            )
+
+            procurement_action = (
+                "Validate contract status, then prioritize renewals, renegotiations, preferred agreements, "
+                "or sourcing events for uncovered spend."
             )
 
             expected_benefit = (
-                "Improved commercial control and reduced pricing or terms leakage."
-            )
-
-            next_action = (
-                f"Validate contract coverage for {category}, then prioritize suppliers for renewal, "
-                "renegotiation, or formal sourcing."
+                "Improved commercial control, stronger payment and service terms, and reduced unmanaged spend exposure."
             )
 
             difficulty = "Medium"
 
         else:
-            recommendation = f"Review sourcing opportunity in {category}."
-            why_it_matters = row["rationale"]
-            expected_benefit = "Potential savings and better supplier management."
-            next_action = row["next_action"]
+            initiative = "Sourcing opportunity review"
+
+            recommendation = (
+                f"Review {opportunity_type} opportunities across relevant categories."
+            )
+
+            rationale = (
+                "The data suggests potential sourcing or supplier management improvement areas."
+            )
+
+            procurement_action = (
+                "Review category-level spend, supplier overlap, business unit usage, and contract coverage."
+            )
+
+            expected_benefit = (
+                "Potential savings and improved procurement control."
+            )
+
             difficulty = "Medium"
 
         recommendations.append(
             {
+                "initiative": initiative,
                 "recommendation": recommendation,
-                "why_it_matters": why_it_matters,
+                "rationale": rationale,
+                "procurement_action": procurement_action,
                 "expected_benefit": expected_benefit,
-                "next_action": next_action,
+                "categories": category_rows,
+                "estimated_savings_range": (
+                    f"${total_low:,.0f} - ${total_high:,.0f}"
+                ),
+                "priority": priority,
                 "difficulty": difficulty,
-                "priority": row["priority"],
-                "estimated_savings_range": row["estimated_savings_range"],
             }
         )
 
-    return recommendations
+    priority_order = {
+        "High": 1,
+        "Medium": 2,
+        "Low": 3,
+    }
 
+    recommendations = sorted(
+        recommendations,
+        key=lambda item: (
+            priority_order.get(item["priority"], 99),
+            -float(
+                item["estimated_savings_range"]
+                .split(" - ")[1]
+                .replace("$", "")
+                .replace(",", "")
+            )
+            if item["estimated_savings_range"] != "Not estimated"
+            else 0,
+        ),
+    )
+
+    return recommendations
 # -------------------------------------------------------------------
 # Processing helpers
 # -------------------------------------------------------------------
@@ -1611,27 +1739,32 @@ def main():
 
         st.divider()
 
-        st.subheader("Top recommended actions")
+        st.subheader("Top recommended procurement initiatives")
 
         for index, recommendation in enumerate(
-                procurement_recommendations[:5],
+                procurement_recommendations[:3],
                 start=1,
         ):
-            st.markdown(
-                f"""
-                <div class="section-card">
-                    <h4>{index}. {recommendation["recommendation"]}</h4>
-                    <p><strong>Rationale:</strong> {recommendation["why_it_matters"]}</p>
-                    <p><strong>Procurement action:</strong> {recommendation["next_action"]}</p>
-                    <p>
-                        <strong>Impact:</strong> {recommendation["estimated_savings_range"]} potential savings &nbsp; | &nbsp;
-                        <strong>{recommendation["priority"]}</strong> priority &nbsp; | &nbsp;
-                        {recommendation["difficulty"]} difficulty
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            render_recommendation_card(
+                recommendation,
+                index,
             )
+
+            # st.markdown(
+            #     f"""
+            #     <div class="section-card">
+            #         <h4>{index}. {recommendation["recommendation"]}</h4>
+            #         <p><strong>Rationale:</strong> {recommendation["why_it_matters"]}</p>
+            #         <p><strong>Procurement action:</strong> {recommendation["next_action"]}</p>
+            #         <p>
+            #             <strong>Impact:</strong> {recommendation["estimated_savings_range"]} potential savings &nbsp; | &nbsp;
+            #             <strong>{recommendation["priority"]}</strong> priority &nbsp; | &nbsp;
+            #             {recommendation["difficulty"]} difficulty
+            #         </p>
+            #     </div>
+            #     """,
+            #     unsafe_allow_html=True,
+            # )
 
     with spend_tab:
         st.subheader("Spend analysis")
@@ -1899,24 +2032,15 @@ def main():
 
         st.divider()
 
+        st.subheader("Recommended savings initiatives")
+
         for index, recommendation in enumerate(
                 procurement_recommendations,
                 start=1,
         ):
-            st.markdown(
-                f"""
-                <div class="section-card">
-                    <h4>{index}. {recommendation["recommendation"]}</h4>
-                    <p><strong>Rationale:</strong> {recommendation["why_it_matters"]}</p>
-                    <p><strong>Procurement action:</strong> {recommendation["next_action"]}</p>
-                    <p>
-                        <strong>Impact:</strong> {recommendation["estimated_savings_range"]} potential savings &nbsp; | &nbsp;
-                        <strong>{recommendation["priority"]}</strong> priority &nbsp; | &nbsp;
-                        {recommendation["difficulty"]} difficulty
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            render_recommendation_card(
+                recommendation,
+                index,
             )
 
     with methodology_tab:
