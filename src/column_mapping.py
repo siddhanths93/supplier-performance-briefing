@@ -27,6 +27,9 @@ COLUMN_ROLES = {
     "gl_account": "Context",
     "currency": "Context",
     "lead_time_days": "Context",
+    "quantity": "Context",
+    "unit_price": "Context",
+    "transaction_id": "Context",
 }
 
 
@@ -115,6 +118,13 @@ COLUMN_ALIASES = {
         "line item description",
         "material description",
         "service description",
+        "itemname",
+        "item name",
+        "item_name",
+        "item",
+        "product",
+        "product name",
+        "product_name",
     ],
     "annual_spend": [
         "annual spend",
@@ -143,6 +153,19 @@ COLUMN_ALIASES = {
         "transaction amount usd",
         "original currency amount",
         "original_currency_amount",
+        "totalcost",
+        "total cost",
+        "total_cost",
+        "total amount",
+        "total_amount",
+        "total price",
+        "total_price",
+        "extended cost",
+        "extended_cost",
+        "line total",
+        "line_total",
+        "purchase amount",
+        "purchase_amount",
     ],
     "prior_year_spend": [
         "prior year spend",
@@ -237,6 +260,31 @@ COLUMN_ALIASES = {
         "date",
         "po date",
         "document date",
+        "purchasedate",
+        "purchase date",
+        "purchase_date",
+        "transaction_date",
+    ],
+    "transaction_id": [
+        "transactionid",
+        "transaction id",
+        "transaction_id",
+        "txn id",
+        "txn_id",
+    ],
+    "quantity": [
+        "quantity",
+        "qty",
+        "order quantity",
+        "order_quantity",
+    ],
+    "unit_price": [
+        "unitprice",
+        "unit price",
+        "unit_price",
+        "price",
+        "unit cost",
+        "unit_cost",
     ],
     "po_number": [
         "po number",
@@ -268,6 +316,8 @@ COLUMN_ALIASES = {
         "category manager",
         "sourcing owner",
         "procurement owner",
+        "purchaser",
+        "requester",
     ],
     "payment_terms": [
         "payment terms",
@@ -385,6 +435,11 @@ def map_columns(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             "amount",
             "original currency amount",
             "original_currency_amount",
+            "totalcost",
+            "total cost",
+            "total_cost",
+            "total amount",
+            "purchase amount",
         ]
     }
 
