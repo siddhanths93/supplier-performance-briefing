@@ -50,6 +50,194 @@ from src.aggregation import (
 
 from src.schema import ensure_optional_analysis_columns
 
+
+def apply_custom_styles():
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 3rem;
+            max-width: 1400px;
+        }
+
+        h1 {
+            font-size: 2.4rem !important;
+            font-weight: 800 !important;
+            color: #0f172a;
+            margin-bottom: 0.25rem;
+        }
+
+        h2, h3 {
+            color: #0f172a;
+            font-weight: 750 !important;
+        }
+
+        div[data-testid="stMetric"] {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            padding: 1rem 1rem;
+            border-radius: 14px;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+        }
+
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.78rem;
+            color: #64748b;
+            font-weight: 650;
+        }
+
+        div[data-testid="stMetricValue"] {
+            font-size: 1.6rem;
+            color: #0f172a;
+            font-weight: 800;
+        }
+
+        .section-card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 1.25rem 1.35rem;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.07);
+            margin-bottom: 1rem;
+        }
+
+        .hero-card {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #0e7490 100%);
+            color: white;
+            border-radius: 22px;
+            padding: 1.6rem 1.8rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .hero-card h2 {
+            color: white;
+            margin-bottom: 0.4rem;
+        }
+
+        .hero-card p {
+            color: #dbeafe;
+            font-size: 1rem;
+            line-height: 1.6;
+        }
+
+        .status-pill-ready {
+            display: inline-block;
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #86efac;
+            border-radius: 999px;
+            padding: 0.45rem 0.85rem;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .status-pill-warning {
+            display: inline-block;
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fcd34d;
+            border-radius: 999px;
+            padding: 0.45rem 0.85rem;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .status-pill-error {
+            display: inline-block;
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+            border-radius: 999px;
+            padding: 0.45rem 0.85rem;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .small-muted {
+            color: #64748b;
+            font-size: 0.9rem;
+            line-height: 1.55;
+        }
+
+        .insight-box {
+            background: #eff6ff;
+            border-left: 5px solid #2563eb;
+            padding: 1rem 1.2rem;
+            border-radius: 12px;
+            color: #1e3a8a;
+            margin: 0.75rem 0 1rem 0;
+        }
+
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 0.35rem;
+        }
+
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 999px;
+            padding: 0.5rem 1rem;
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+        }
+
+        .stTabs [aria-selected="true"] {
+            background: #0f172a !important;
+            color: white !important;
+        }
+
+        div[data-testid="stDataFrame"] {
+            border-radius: 14px;
+            overflow: hidden;
+            border: 1px solid #e5e7eb;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def format_currency(value):
+    try:
+        return f"${float(value):,.0f}"
+    except Exception:
+        return "N/A"
+
+
+def format_number(value):
+    try:
+        return f"{float(value):,.0f}"
+    except Exception:
+        return "N/A"
+
+
+def format_percent(value):
+    try:
+        return f"{float(value):.1f}%"
+    except Exception:
+        return "N/A"
+
+
+def prettify_column_name(column_name: str) -> str:
+    return (
+        column_name.replace("_", " ")
+        .replace("pct", "%")
+        .title()
+        .replace("Otd", "OTD")
+        .replace("Po ", "PO ")
+        .replace("Gl ", "GL ")
+    )
+
+
+def make_display_table(data):
+    display_data = data.copy()
+    display_data.columns = [
+        prettify_column_name(column)
+        for column in display_data.columns
+    ]
+    return display_data
+
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 SAMPLE_FILE = (
@@ -706,28 +894,34 @@ def main() -> None:
     Run the local Streamlit application.
     """
     st.set_page_config(
-        page_title="Supplier Performance Briefing",
-        page_icon="📊",
+        page_title="Supplier Performance & Spend Intelligence",
         layout="wide",
     )
 
-    st.title(
-        "Supplier Performance & Concentration "
-        "Briefing Tool"
+    apply_custom_styles()
+
+    st.markdown(
+        """
+        <div class="hero-card">
+            <h2>Supplier Performance & Spend Intelligence Dashboard</h2>
+            <p>
+            Upload supplier spend or performance data to assess data readiness, classify spend,
+            identify concentration risks, score supplier attention areas, and generate executive-ready outputs.
+            </p>
+            <p>
+            <strong>Portfolio demo:</strong> built with Python, Streamlit, Pandas, Plotly, OpenPyXL, and Pytest.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    st.write(
-        "Identify supplier relationships and categories "
-        "that may require management review."
-    )
+    st.sidebar.header("Upload Data")
 
-    st.info(
-        "This prototype uses synthetic data and an "
-        "illustrative scoring methodology. Findings are "
-        "review hypotheses, not final sourcing decisions."
+    st.sidebar.write(
+        "Upload a supplier-level performance file or transaction-level spend file. "
+        "The app maps common column names automatically and explains which analyses are available."
     )
-
-    st.sidebar.header("Data source")
 
     use_sample_data = st.sidebar.checkbox(
         "Use sample synthetic dataset",
@@ -833,11 +1027,11 @@ def main() -> None:
 
     readiness_tab, overview_tab, supplier_tab, findings_tab, methodology_tab = st.tabs(
         [
-            "Data Readiness",
-            "Executive Overview",
-            "Supplier Attention",
-            "Management Findings",
-            "Methodology",
+            "1. Data Readiness",
+            "2. Executive Overview",
+            "3. Supplier Attention",
+            "4. Insights Briefing",
+            "5. Methodology",
         ]
     )
 
@@ -847,147 +1041,168 @@ def main() -> None:
         status = readiness_report["analysis_status"]
 
         if status == "Ready":
-            st.success("Status: Ready")
+            status_class = "status-pill-ready"
         elif status == "Ready with Limitations":
-            st.warning("Status: Ready with limitations")
+            status_class = "status-pill-warning"
         else:
-            st.error("Status: Not ready")
+            status_class = "status-pill-error"
 
-        st.caption(
-            "This review explains what the uploaded file can support "
-            "before analytics, scoring, and findings are produced."
+        st.markdown(
+            f"""
+            <div class="section-card">
+                <span class="{status_class}">Status: {status}</span>
+                <p class="small-muted" style="margin-top: 0.85rem;">
+                This tab checks whether the uploaded file is ready for analysis. It shows which columns were mapped,
+                which fields are missing, whether dates were usable, how spend was classified, and whether transaction
+                rows were aggregated before scoring.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
         readiness_columns = st.columns(5)
 
         readiness_columns[0].metric(
-            "Rows Uploaded",
-            readiness_report["row_count"],
+            "Rows analyzed",
+            format_number(readiness_report["row_count"]),
         )
 
         readiness_columns[1].metric(
-            "Columns Detected",
-            readiness_report["column_count"],
+            "Columns detected",
+            format_number(readiness_report["column_count"]),
         )
 
         readiness_columns[2].metric(
-            "File Type",
-            readiness_report["input_file_type"],
+            "Mapped columns",
+            format_number(readiness_report["mapped_column_count"]),
         )
 
         readiness_columns[3].metric(
-            "Mapped Columns",
-            readiness_report["mapped_column_count"],
+            "Unmapped columns",
+            format_number(readiness_report["unmapped_column_count"]),
         )
 
         readiness_columns[4].metric(
-            "Unmapped Columns",
-            readiness_report["unmapped_column_count"],
+            "File type",
+            readiness_report["input_file_type"].replace(" file", ""),
         )
-        st.subheader("Date coverage review")
+
+        st.divider()
+
+        st.subheader("Date coverage")
 
         if date_summary["has_date_column"]:
-            st.info(
-                "A date column was detected. The app created invoice_year, "
-                "invoice_quarter, and invoice_month fields for future "
-                "time-based analysis."
+            st.markdown(
+                """
+                <div class="insight-box">
+                A date column was detected. The app created year, quarter, and month fields for future time-based analysis.
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
         else:
             st.warning(
-                "No date column was detected. The app can still analyze total "
-                "uploaded spend, but time-based analysis such as monthly trends "
-                "or year-over-year movement will be limited."
+                "No date column was detected. The app can still analyze total uploaded spend, "
+                "but time-based analysis will be limited."
             )
 
         date_columns = st.columns(5)
 
         date_columns[0].metric(
-            "Valid Date Rows",
-            date_summary["valid_date_rows"],
+            "Valid date rows",
+            format_number(date_summary["valid_date_rows"]),
         )
 
         date_columns[1].metric(
-            "Invalid/Missing Date Rows",
-            date_summary["invalid_date_rows"],
+            "Invalid/missing dates",
+            format_number(date_summary["invalid_date_rows"]),
         )
 
         date_columns[2].metric(
-            "Date Coverage",
-            f"{date_summary['date_coverage_pct']}%",
+            "Date coverage",
+            format_percent(date_summary["date_coverage_pct"]),
         )
 
         date_columns[3].metric(
-            "Earliest Date",
+            "Earliest date",
             date_summary["min_date"] or "N/A",
         )
 
         date_columns[4].metric(
-            "Latest Date",
+            "Latest date",
             date_summary["max_date"] or "N/A",
         )
+
+        st.divider()
+
+        st.subheader("Classification coverage")
 
         classification_columns = st.columns(4)
 
         classification_columns[0].metric(
-            "Classified Rows",
-            classification_summary["classified_rows"],
+            "Classified rows",
+            format_number(classification_summary["classified_rows"]),
         )
 
         classification_columns[1].metric(
-            "Unclassified Rows",
-            classification_summary["unclassified_rows"],
+            "Unclassified rows",
+            format_number(classification_summary["unclassified_rows"]),
         )
 
         classification_columns[2].metric(
-            "Review Required",
-            classification_summary["review_required_rows"],
+            "Review required",
+            format_number(classification_summary["review_required_rows"]),
         )
 
         classification_columns[3].metric(
-            "Classification Coverage",
-            f"{classification_summary['classification_coverage_pct']}%",
+            "Coverage",
+            format_percent(classification_summary["classification_coverage_pct"]),
         )
+
+        st.divider()
 
         st.subheader("Aggregation review")
 
         if aggregation_summary["was_aggregated"]:
-            st.info(
-                "The uploaded file contained multiple rows for the same "
-                "supplier/category combination, so the app aggregated it "
-                "before scoring and dashboard analysis."
+            st.markdown(
+                """
+                <div class="insight-box">
+                Multiple rows for the same supplier/category were detected, so the app aggregated them before scoring and dashboard analysis.
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
         else:
             st.success(
-                "No supplier/category aggregation was required for the main "
-                "dashboard view. The file appears to already be supplier-category "
-                "level, or duplicate supplier/category rows were not detected."
+                "No supplier/category aggregation was required for the main dashboard view."
             )
 
         aggregation_columns = st.columns(5)
 
         aggregation_columns[0].metric(
-            "Aggregation Grain",
+            "Aggregation grain",
             aggregation_summary["time_grain"],
         )
 
         aggregation_columns[1].metric(
-            "Input Rows",
-            aggregation_summary["input_rows"],
+            "Input rows",
+            format_number(aggregation_summary["input_rows"]),
         )
 
         aggregation_columns[2].metric(
-            "Rows After Aggregation",
-            aggregation_summary["output_rows"],
+            "Rows after aggregation",
+            format_number(aggregation_summary["output_rows"]),
         )
 
         aggregation_columns[3].metric(
-            "Rows Reduced",
-            aggregation_summary["rows_reduced"],
+            "Rows reduced",
+            format_number(aggregation_summary["rows_reduced"]),
         )
 
         aggregation_columns[4].metric(
-            "Suppliers Detected",
-            aggregation_summary["output_supplier_count"],
+            "Suppliers detected",
+            format_number(aggregation_summary["output_supplier_count"]),
         )
 
         st.subheader("Supported upload types")
@@ -1012,13 +1227,7 @@ def main() -> None:
             "spend amount, and either category or description."
         )
 
-        st.subheader("Analysis capabilities")
-
-        st.dataframe(
-            readiness_report["analysis_capabilities"],
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.divider()
 
         st.subheader("Classification sample")
 
@@ -1027,14 +1236,10 @@ def main() -> None:
             "description",
             "annual_spend",
             "invoice_date",
-            "invoice_year",
-            "invoice_quarter",
-            "invoice_month",
             "taxonomy_level_1",
             "taxonomy_level_2",
             "classification_confidence",
             "classification_score",
-            "classification_reason",
             "needs_classification_review",
         ]
 
@@ -1044,117 +1249,247 @@ def main() -> None:
             if column in filtered_supplier_data.columns
         ]
 
+        classification_sample = filtered_supplier_data[
+            available_classification_columns
+        ].head(12)
+
         st.dataframe(
-            filtered_supplier_data[
-                available_classification_columns
-            ].head(25),
+            make_display_table(classification_sample),
             use_container_width=True,
             hide_index=True,
         )
 
-        st.subheader("Column readiness")
-
-        st.dataframe(
-            readiness_report["column_readiness_table"],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        st.subheader("Column mapping report")
-
-        st.dataframe(
-            mapping_report,
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        st.subheader("Analysis limitations")
-
-        for limitation in readiness_report["analysis_limitations"]:
-            st.write(f"- {limitation}")
-
-    with overview_tab:
-        st.subheader("Executive overview")
-
-        if filtered_supplier_data.empty:
-            st.warning(
-                "No suppliers match the selected filters."
-            )
-        else:
-            display_executive_overview(
-                filtered_supplier_data,
-                filtered_category_metrics,
-            )
-
-            data_quality_summary = (
-                create_data_quality_summary(
-                    filtered_supplier_data
-                )
-            )
-
-            st.subheader("Data quality")
-
-            quality_columns = st.columns(4)
-
-            quality_columns[0].metric(
-                "Missing Cells",
-                data_quality_summary[
-                    "missing_cells"
-                ],
-            )
-
-            quality_columns[1].metric(
-                "Missing Cell %",
-                (
-                    f"{data_quality_summary['missing_cell_pct']}%"
-                ),
-            )
-
-            quality_columns[2].metric(
-                "Duplicate Rows",
-                data_quality_summary[
-                    "exact_duplicate_rows"
-                ],
-            )
-
-            quality_columns[3].metric(
-                "Invalid Spend Rows",
-                data_quality_summary[
-                    "invalid_spend_rows"
-                ],
-            )
-
-        st.subheader("Category overview")
-
-        if filtered_category_metrics.empty:
-            st.warning(
-                "No categories match the selected filters."
-            )
-        else:
-            category_table = (
-                filtered_category_metrics.sort_values(
-                    by="total_category_spend",
-                    ascending=False,
-                )
-            )
-
+        with st.expander("View analysis capability details"):
             st.dataframe(
-                category_table,
+                make_display_table(readiness_report["analysis_capabilities"]),
                 use_container_width=True,
                 hide_index=True,
             )
 
-            st.subheader("Category concentration")
-
-            concentration_chart = (
-                create_category_concentration_chart(
-                    filtered_category_metrics
-                )
+        with st.expander("View column readiness details"):
+            st.dataframe(
+                make_display_table(readiness_report["column_readiness_table"]),
+                use_container_width=True,
+                hide_index=True,
             )
 
-            st.plotly_chart(
-                concentration_chart,
+        with st.expander("View column mapping report"):
+            st.dataframe(
+                make_display_table(mapping_report),
                 use_container_width=True,
+                hide_index=True,
+            )
+
+        with st.expander("View analysis limitations"):
+            for limitation in readiness_report["analysis_limitations"]:
+                st.write(f"- {limitation}")
+
+    with overview_tab:
+        st.subheader("Executive overview")
+
+        total_spend = (
+            filtered_supplier_data["annual_spend"].sum()
+            if "annual_spend" in filtered_supplier_data.columns
+            else 0
+        )
+
+        supplier_count = (
+            filtered_supplier_data["supplier_name"].nunique()
+            if "supplier_name" in filtered_supplier_data.columns
+            else 0
+        )
+
+        category_count = (
+            filtered_supplier_data["category"].nunique()
+            if "category" in filtered_supplier_data.columns
+            else 0
+        )
+
+        high_attention_count = (
+            (filtered_supplier_data["attention_level"] == "High").sum()
+            if "attention_level" in filtered_supplier_data.columns
+            else 0
+        )
+
+        overview_columns = st.columns(4)
+
+        overview_columns[0].metric(
+            "Total spend",
+            format_currency(total_spend),
+        )
+
+        overview_columns[1].metric(
+            "Suppliers",
+            format_number(supplier_count),
+        )
+
+        overview_columns[2].metric(
+            "Categories",
+            format_number(category_count),
+        )
+
+        overview_columns[3].metric(
+            "High-attention suppliers",
+            format_number(high_attention_count),
+        )
+
+        st.markdown(
+            """
+            <div class="insight-box">
+            This overview summarizes supplier spend, concentration exposure, data quality, 
+            and high-attention suppliers after mapping, classification, date handling, and aggregation.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.divider()
+
+        st.subheader("Data quality snapshot")
+
+        missing_cells = (
+            filtered_supplier_data.isna().sum().sum()
+        )
+
+        total_cells = (
+                filtered_supplier_data.shape[0]
+                * filtered_supplier_data.shape[1]
+        )
+
+        missing_cell_pct = (
+            missing_cells / total_cells * 100
+            if total_cells > 0
+            else 0
+        )
+
+        duplicate_rows = (
+            filtered_supplier_data.duplicated().sum()
+        )
+
+        invalid_spend_rows = (
+            (filtered_supplier_data["annual_spend"].isna()).sum()
+            if "annual_spend" in filtered_supplier_data.columns
+            else 0
+        )
+
+        quality_columns = st.columns(4)
+
+        quality_columns[0].metric(
+            "Missing cells",
+            format_number(missing_cells),
+        )
+
+        quality_columns[1].metric(
+            "Missing cell %",
+            format_percent(missing_cell_pct),
+        )
+
+        quality_columns[2].metric(
+            "Duplicate rows",
+            format_number(duplicate_rows),
+        )
+
+        quality_columns[3].metric(
+            "Invalid spend rows",
+            format_number(invalid_spend_rows),
+        )
+
+        st.divider()
+
+        st.subheader("Category overview")
+
+        category_display_columns = [
+            "category",
+            "total_category_spend",
+            "supplier_count",
+            "top_supplier_share_pct",
+            "tail_supplier_count",
+            "concentration_risk_flag",
+            "fragmentation_review_flag",
+            "tail_spend_review_flag",
+        ]
+
+        available_category_display_columns = [
+            column
+            for column in category_display_columns
+            if column in filtered_category_metrics.columns
+        ]
+
+        if available_category_display_columns:
+            category_overview_display = filtered_category_metrics[
+                available_category_display_columns
+            ].copy()
+
+            # Keep the default view clean for interview/demo.
+            st.dataframe(
+                make_display_table(
+                    category_overview_display.head(10)
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            with st.expander("View full category metrics"):
+                st.dataframe(
+                    make_display_table(filtered_category_metrics),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            st.warning(
+                "Category metrics are not available for the current uploaded file."
+            )
+
+        st.divider()
+
+        st.subheader("Supplier attention snapshot")
+
+        supplier_display_columns = [
+            "supplier_name",
+            "category",
+            "annual_spend",
+            "attention_score",
+            "attention_level",
+            "spend_change_pct",
+            "on_time_delivery_pct",
+            "defect_rate_pct",
+            "supplier_criticality",
+        ]
+
+        available_supplier_display_columns = [
+            column
+            for column in supplier_display_columns
+            if column in filtered_supplier_data.columns
+        ]
+
+        if available_supplier_display_columns:
+            supplier_attention_display = filtered_supplier_data[
+                available_supplier_display_columns
+            ].copy()
+
+            if "attention_score" in supplier_attention_display.columns:
+                supplier_attention_display = supplier_attention_display.sort_values(
+                    by="attention_score",
+                    ascending=False,
+                )
+
+            st.dataframe(
+                make_display_table(
+                    supplier_attention_display.head(10)
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            with st.expander("View full supplier dataset"):
+                st.dataframe(
+                    make_display_table(filtered_supplier_data),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            st.warning(
+                "Supplier attention details are not available for the current uploaded file."
             )
 
     with supplier_tab:
@@ -1260,6 +1595,42 @@ def main() -> None:
 
     with methodology_tab:
         display_methodology()
+
+        st.subheader("What this project demonstrates")
+
+        st.write(
+            """
+            This project is designed as a realistic supplier analytics workflow rather than a static dashboard.
+            It handles messy uploaded files, maps common procurement column names, checks readiness before analysis,
+            classifies spend using transparent rules, parses transaction dates, aggregates supplier/category rows,
+            and produces management-style findings.
+            """
+        )
+
+        st.subheader("Core capabilities")
+
+        st.markdown(
+            """
+            - **Flexible file ingestion:** accepts CSV and Excel files with varied column names.
+            - **Column mapping:** maps aliases like Vendor Name, Invoice Amount, OTD %, PO Number, and Cost Center to canonical fields.
+            - **Data readiness:** explains which analyses are available, limited, or unavailable.
+            - **Spend classification:** uses a built-in taxonomy and scored rules-based classification.
+            - **Date handling:** parses invoice dates and creates year, quarter, and month fields.
+            - **Supplier/category aggregation:** supports transaction-level and supplier-level files.
+            - **Attention scoring:** highlights suppliers needing management review.
+            - **Executive exports:** generates downloadable CSV and Excel outputs.
+            """
+        )
+
+        st.subheader("Why I built it")
+
+        st.write(
+            """
+            I built this to combine my procurement and supply chain analytics background with hands-on Python product development.
+            The goal was to create a practical tool that mirrors the messy reality of supplier data: inconsistent column names,
+            missing optional fields, extra ERP columns, mixed transaction and supplier-level files, and varying data quality.
+            """
+        )
 
 if __name__ == "__main__":
     main()
