@@ -753,7 +753,20 @@ def calculate_supplier_summary(results):
     return supplier_summary
 
 
-def classify_contract_risk(status, spend=0, high_spend_threshold=0):
+def classify_contract_risk(status, spend=0, high_spend_threshold=0, contract_data_available=True):
+    """
+    Classifies contract risk only when contract data is actually available.
+
+    Important consulting logic:
+    - Missing contract_status column = Not Evaluated
+    - Present but Unknown contract_status value = Data Validation Required
+    - Expired / No Contract = High
+    - Active = Low
+    """
+
+    if not contract_data_available:
+        return "Not Evaluated"
+
     status_text = str(status).strip().lower()
 
     if status_text in ["active", "active contract", "contracted"]:
@@ -766,9 +779,9 @@ def classify_contract_risk(status, spend=0, high_spend_threshold=0):
         return "High"
 
     if status_text in ["unknown", "not available", "n/a", "na", ""]:
-        return "High" if spend >= high_spend_threshold and spend > 0 else "Medium"
+        return "Data Validation Required"
 
-    return "Medium"
+    return "Data Validation Required"
 
 
 def get_performance_flags(row):
@@ -856,6 +869,8 @@ def assign_supplier_archetypes(supplier_summary):
     high_spend_threshold = data["annual_spend"].quantile(0.75) if len(data) > 1 else data["annual_spend"].max()
     medium_spend_threshold = data["annual_spend"].quantile(0.50) if len(data) > 1 else data["annual_spend"].median()
 
+    contract_data_available = "contract_status" in data.columns
+
     archetypes = []
     actions = []
     why_flags = []
@@ -866,7 +881,11 @@ def assign_supplier_archetypes(supplier_summary):
     for _, row in data.iterrows():
         spend = float(row.get("annual_spend", 0))
         criticality = str(row.get("supplier_criticality", "Unknown")).strip().lower()
-        contract_status = row.get("contract_status", "Unknown")
+
+        if contract_data_available:
+            contract_status = row.get("contract_status", "Unknown")
+        else:
+            contract_status = "Not Provided"
 
         is_high_spend = spend >= high_spend_threshold and spend > 0
         is_medium_spend = spend >= medium_spend_threshold and spend > 0
@@ -874,7 +893,13 @@ def assign_supplier_archetypes(supplier_summary):
         is_high_criticality = criticality in ["high", "critical", "business critical", "strategic"]
         is_medium_criticality = criticality in ["medium", "moderate"]
 
-        contract_risk = classify_contract_risk(contract_status, spend, high_spend_threshold)
+        contract_risk = classify_contract_risk(
+            contract_status,
+            spend,
+            high_spend_threshold,
+            contract_data_available=contract_data_available,
+        )
+
         flags = get_performance_flags(row)
 
         poor_performance = len(flags) > 0
@@ -882,6 +907,7 @@ def assign_supplier_archetypes(supplier_summary):
 
         if pd.notna(row.get("on_time_delivery")) and float(row.get("on_time_delivery")) < 95:
             strong_performance = False
+
         if pd.notna(row.get("defect_rate")) and float(row.get("defect_rate")) > 1:
             strong_performance = False
 
@@ -899,11 +925,18 @@ def assign_supplier_archetypes(supplier_summary):
         elif is_medium_criticality:
             reasons.append("supplier criticality is Medium")
 
-        if contract_risk in ["High", "Medium"]:
-            reasons.append(f"contract risk is {contract_risk}")
+        if contract_data_available:
+            if contract_risk in ["High", "Medium", "Data Validation Required"]:
+                reasons.append(f"contract status requires review: {contract_status}")
+        else:
+            reasons.append("contract status was not provided, so contract risk was not evaluated")
 
         for flag in flags[:2]:
             reasons.append(f"{flag['metric']} issue: {flag['change']}")
+
+        # Important: contract risk should not drive archetypes unless contract data exists.
+        has_real_contract_gap = contract_data_available and contract_risk in ["High", "Medium"]
+        has_contract_validation_need = contract_data_available and contract_risk == "Data Validation Required"
 
         if is_high_criticality and poor_performance:
             archetype = "Alternate Source Required"
@@ -917,13 +950,19 @@ def assign_supplier_archetypes(supplier_summary):
             priority = "High"
             risk_flag = True
 
-        elif (is_high_spend or is_medium_spend) and contract_risk == "High":
+        elif (is_high_spend or is_medium_spend) and has_real_contract_gap:
             archetype = "Contract Review Priority"
             action = "Validate contract coverage, renewal timing, and commercial protection."
             priority = "High" if is_high_spend else "Medium"
             risk_flag = True
 
-        elif is_high_spend and strong_performance and contract_risk == "Low" and (is_high_criticality or is_medium_criticality):
+        elif (is_high_spend or is_medium_spend) and has_contract_validation_need:
+            archetype = "Data Validation Required"
+            action = "Validate contract metadata before assigning contract risk."
+            priority = "Medium"
+            risk_flag = False
+
+        elif is_high_spend and strong_performance and contract_risk in ["Low", "Not Evaluated"] and (is_high_criticality or is_medium_criticality):
             archetype = "Strategic Partner"
             action = "Maintain relationship, deepen collaboration, and review value-add opportunities."
             priority = "Medium"
@@ -935,7 +974,7 @@ def assign_supplier_archetypes(supplier_summary):
             priority = "Medium"
             risk_flag = True
 
-        elif is_low_spend and contract_risk in ["High", "Medium"]:
+        elif is_low_spend and has_real_contract_gap:
             archetype = "Rationalization Candidate"
             action = "Consider consolidation, replacement, or migration to a preferred supplier."
             priority = "Medium"
@@ -963,7 +1002,6 @@ def assign_supplier_archetypes(supplier_summary):
 
     return data
 
-
 def calculate_spend_at_risk(supplier_diagnostics):
     if supplier_diagnostics.empty:
         return {}
@@ -982,15 +1020,23 @@ def calculate_spend_at_risk(supplier_diagnostics):
         supplier_diagnostics["action_archetype"].isin(risk_archetypes)
     ]["annual_spend"].sum()
 
-    high_criticality_spend = supplier_diagnostics[
-        supplier_diagnostics.get("supplier_criticality", "").astype(str).str.lower().isin(
-            ["high", "critical", "business critical", "strategic"]
-        )
-    ]["annual_spend"].sum() if "supplier_criticality" in supplier_diagnostics.columns else 0
+    if "supplier_criticality" in supplier_diagnostics.columns:
+        high_criticality_spend = supplier_diagnostics[
+            supplier_diagnostics["supplier_criticality"]
+            .astype(str)
+            .str.lower()
+            .isin(["high", "critical", "business critical", "strategic"])
+        ]["annual_spend"].sum()
+    else:
+        high_criticality_spend = 0
 
-    contract_gap_spend = supplier_diagnostics[
-        supplier_diagnostics["contract_risk"].isin(["High", "Medium"])
-    ]["annual_spend"].sum() if "contract_risk" in supplier_diagnostics.columns else 0
+    # Only count contract gap exposure if contract status was actually provided.
+    if "contract_status" in supplier_diagnostics.columns and "contract_risk" in supplier_diagnostics.columns:
+        contract_gap_spend = supplier_diagnostics[
+            supplier_diagnostics["contract_risk"].isin(["High", "Medium"])
+        ]["annual_spend"].sum()
+    else:
+        contract_gap_spend = None
 
     declining_spend = 0
 
@@ -1006,7 +1052,6 @@ def calculate_spend_at_risk(supplier_diagnostics):
         "contract_gap_spend": contract_gap_spend,
         "declining_performance_spend": declining_spend,
     }
-
 
 # ============================================================
 # OPPORTUNITY AND PIPELINE ENGINE
@@ -1290,7 +1335,7 @@ def calculate_data_readiness(results, supplier_normalization_summary, original_c
     dimensions.append(("Date validity", date_score))
     dimensions.append(("Duplicate supplier risk", duplicate_score))
 
-    overall_score = round(sum(score for _, score in dimensions) / len(dimensions), 1)
+    overall_score = round(sum(score for _, score in dimensions) / len(dimensions), 0)
 
     missing_columns = [
         col for col in required_fields + performance_fields + contract_fields + context_fields
@@ -1479,58 +1524,79 @@ def chart_spend_at_risk_top_suppliers(supplier_diagnostics):
 def render_executive_diagnostic(results, supplier_diagnostics, spend_risk, pipeline, data_readiness):
     st.subheader("Executive Diagnostic")
 
-    metric_cols = st.columns(6)
-
     total_spend = spend_risk.get("total_spend", 0)
     spend_at_risk = spend_risk.get("spend_at_risk", 0)
     spend_at_risk_pct = spend_risk.get("spend_at_risk_pct", 0)
-    contract_gap_spend = spend_risk.get("contract_gap_spend", 0)
+
+    contract_gap_spend = spend_risk.get("contract_gap_spend", None)
+    contract_gap_display = (
+        format_currency(contract_gap_spend)
+        if contract_gap_spend is not None
+        else "Not evaluated"
+    )
+
     high_priority_actions = int((pipeline["priority"] == "High").sum()) if not pipeline.empty else 0
     supplier_count = supplier_diagnostics["supplier"].nunique() if not supplier_diagnostics.empty else 0
+    duplicate_count = data_readiness.get("duplicate_family_count", 0)
 
+    metric_cols = st.columns(6)
     metric_cols[0].metric("Total Spend", format_currency(total_spend))
     metric_cols[1].metric("Suppliers", format_number(supplier_count))
-    metric_cols[2].metric("Spend at Risk", f"{format_currency(spend_at_risk)}")
+    metric_cols[2].metric("Spend at Risk", format_currency(spend_at_risk))
     metric_cols[3].metric("% at Risk", format_percent(spend_at_risk_pct))
-    metric_cols[4].metric("Contract Gap", format_currency(contract_gap_spend))
+    metric_cols[4].metric("Contract Gap", contract_gap_display)
     metric_cols[5].metric("High Priority Actions", format_number(high_priority_actions))
 
-    duplicate_count = data_readiness.get("duplicate_family_count", 0)
+    st.markdown("### Diagnostic View")
 
     st.markdown(
         f"""
-        <div class="callout-card">
-            <strong>Diagnostic view:</strong> The tool analyzed {format_currency(total_spend)} across 
-            {format_number(supplier_count)} supplier families. It identified {format_currency(spend_at_risk)} 
-            of spend requiring procurement action, equal to {format_percent(spend_at_risk_pct)} of analyzed spend.
-            The current action pipeline contains {len(pipeline)} recommended management actions, including 
-            {high_priority_actions} high-priority items.
-            <br><br>
-            <strong>Supplier normalization:</strong> {duplicate_count} potential duplicate supplier-family patterns 
-            were detected using alias rules and fuzzy matching. These matches are used to improve the diagnostic but 
-            should be reviewed before final consolidation decisions.
-        </div>
-        """,
-        unsafe_allow_html=True,
+The tool analyzed **{format_currency(total_spend)}** across **{format_number(supplier_count)} supplier families**.
+
+It identified **{format_currency(spend_at_risk)}** of spend requiring procurement action, equal to **{format_percent(spend_at_risk_pct)}** of analyzed spend.
+
+The current action pipeline contains **{len(pipeline)} recommended management actions**, including **{high_priority_actions} high-priority items**.
+"""
+    )
+
+    st.markdown("### Contract Coverage")
+
+    if contract_gap_spend is not None:
+        st.markdown(
+            f"""
+Contract gap exposure is estimated at **{contract_gap_display}**.
+
+This reflects suppliers with Medium or High contract coverage risk based on contract status data provided in the uploaded file.
+"""
+        )
+    else:
+        st.warning(
+            "Contract gap exposure was not evaluated because `contract_status` was not included in the uploaded file. "
+            "This is treated as a data limitation, not an assumed supplier risk."
+        )
+
+    st.markdown("### Supplier Normalization")
+
+    st.markdown(
+        f"""
+The diagnostic identified **{duplicate_count} potential duplicate supplier-family patterns** using alias rules and fuzzy matching.
+
+These matches are used to improve spend concentration and action pipeline logic, but should be reviewed before final supplier consolidation decisions.
+"""
     )
 
     if not pipeline.empty:
         st.markdown("### Immediate Leadership Focus")
+
         top_actions = pipeline.head(5)
 
         for idx, row in top_actions.iterrows():
-            st.markdown(
-                f"""
-                <div class="section-card">
-                    <h4>{idx + 1}. {row.get("opportunity_action")}</h4>
-                    <p><strong>Value / Exposure:</strong> {row.get("value_exposure_display")} |
-                    <strong>Priority:</strong> {row.get("priority")} |
-                    <strong>Owner:</strong> {row.get("recommended_owner")}</p>
-                    <p><strong>Next step:</strong> {row.get("next_step")}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.expander(f"{idx + 1}. {row.get('opportunity_action')}"):
+                st.markdown(f"**Value / Exposure:** {row.get('value_exposure_display')}")
+                st.markdown(f"**Priority:** {row.get('priority')}")
+                st.markdown(f"**Recommended Owner:** {row.get('recommended_owner')}")
+                st.markdown(f"**Next Step:** {row.get('next_step')}")
+                st.markdown(f"**Why Flagged:** {row.get('why_flagged')}")
 
 
 def render_spend_analytics(results):
@@ -1861,189 +1927,172 @@ def render_cpo_briefing(supplier_diagnostics, pipeline, spend_risk, data_readine
     total_spend = spend_risk.get("total_spend", 0)
     spend_at_risk = spend_risk.get("spend_at_risk", 0)
     spend_at_risk_pct = spend_risk.get("spend_at_risk_pct", 0)
-    contract_gap = spend_risk.get("contract_gap_spend", 0)
-    readiness_score = data_readiness.get("overall_score", 0)
 
-    supplier_count = supplier_diagnostics["supplier"].nunique() if not supplier_diagnostics.empty else 0
-    high_priority_count = int((pipeline["priority"] == "High").sum()) if not pipeline.empty else 0
-
-    st.markdown("### Executive Supplier & Spend Diagnostic")
-
-    metric_cols = st.columns(5)
-    metric_cols[0].metric("Total Spend", format_currency(total_spend))
-    metric_cols[1].metric("Suppliers", format_number(supplier_count))
-    metric_cols[2].metric("Spend at Risk", format_currency(spend_at_risk))
-    metric_cols[3].metric("% at Risk", format_percent(spend_at_risk_pct))
-    metric_cols[4].metric("Data Readiness", f"{readiness_score} / 100")
-
-    if spend_at_risk_pct >= 20:
-        overall_message = (
-            "Supplier and spend exposure appear material. Procurement leadership should prioritize validation "
-            "of high-risk suppliers, contract gaps, and addressable sourcing opportunities."
-        )
-    elif spend_at_risk_pct >= 10:
-        overall_message = (
-            "Supplier and spend exposure appear moderate. The near-term priority is to validate the highest-value "
-            "pipeline items and confirm which opportunities are addressable."
-        )
-    else:
-        overall_message = (
-            "Supplier and spend exposure appear manageable based on the available file. The biggest value is likely "
-            "in improving data quality, supplier normalization, contract visibility, and targeted opportunity review."
-        )
-
-    with st.container(border=True):
-        st.markdown("#### 1. Executive Summary")
-
-        summary_cols = st.columns(4)
-        summary_cols[0].metric("Analyzed Spend", format_currency(total_spend))
-        summary_cols[1].metric("Supplier Families", format_number(supplier_count))
-        summary_cols[2].metric("Spend at Risk", format_currency(spend_at_risk))
-        summary_cols[3].metric("% at Risk", format_percent(spend_at_risk_pct))
-
-        st.markdown(
-            "The diagnostic reviewed the uploaded supplier spend file and identified "
-            "the portion of spend associated with suppliers or opportunities requiring "
-            "procurement action."
-        )
-
-        st.markdown(overall_message)
-
-    top_supplier_text = "No high-risk supplier concentration detected."
-    top_risk = pd.DataFrame()
-
-    if not supplier_diagnostics.empty and "is_spend_at_risk" in supplier_diagnostics.columns:
-        top_risk = (
-            supplier_diagnostics[supplier_diagnostics["is_spend_at_risk"]]
-            .sort_values("annual_spend", ascending=False)
-            .head(5)
-        )
-
-    with st.container(border=True):
-        st.markdown("#### 2. Top Suppliers Requiring Attention")
-
-        if top_risk.empty:
-            st.success("No suppliers were flagged as spend-at-risk based on the current diagnostic rules.")
-        else:
-            display_cols = [
-                "supplier",
-                "category",
-                "annual_spend",
-                "action_archetype",
-                "priority",
-                "contract_risk",
-                "recommended_action",
-            ]
-            available_cols = [col for col in display_cols if col in top_risk.columns]
-            display = top_risk[available_cols].copy()
-
-            if "annual_spend" in display.columns:
-                display["annual_spend"] = display["annual_spend"].apply(format_currency)
-
-            st.dataframe(make_display_table(display), use_container_width=True, hide_index=True)
-
-    with st.container(border=True):
-        st.markdown("#### 3. Contract Coverage Exposure")
-        st.markdown(
-            f"Approximately **{format_currency(contract_gap)}** is associated with suppliers showing "
-            f"medium or high contract coverage risk. Procurement should validate whether this represents true "
-            f"unmanaged spend or incomplete contract metadata before initiating sourcing action."
-        )
-
-    with st.container(border=True):
-        st.markdown("#### 4. Priority Action Pipeline")
-
-        if pipeline.empty:
-            st.warning("No action pipeline items were generated.")
-        else:
-            pipeline_summary = pipeline.head(5).copy()
-
-            display_cols = [
-                "opportunity_action",
-                "supplier_or_category",
-                "value_exposure_display",
-                "priority",
-                "complexity",
-                "recommended_owner",
-                "next_step",
-            ]
-            available_cols = [col for col in display_cols if col in pipeline_summary.columns]
-
-            st.dataframe(
-                make_display_table(pipeline_summary[available_cols]),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-            st.markdown(
-                f"The current action pipeline includes **{len(pipeline)} total actions**, including "
-                f"**{high_priority_count} high-priority actions**."
-            )
-
-    with st.container(border=True):
-        st.markdown("#### 5. Key Management Implications")
-        st.markdown(
-            """
-- Prioritize the highest-value supplier and category actions before expanding the analysis.
-- Validate contract metadata before treating contract gaps as true unmanaged spend.
-- Review fuzzy supplier-family matches before making consolidation decisions.
-- Treat savings and exposure values as directional until category owners validate addressability.
-- Move validated opportunities into a formal sourcing or procurement action pipeline.
-            """
-        )
-
-    st.markdown("### 30 / 60 / 90 Day Action Plan")
-
-    plan = pd.DataFrame(
-        [
-            {
-                "timeframe": "30 days",
-                "actions": (
-                    "Validate supplier normalization, review top spend-at-risk suppliers, confirm contract status, "
-                    "and align with category owners on which findings are addressable."
-                ),
-            },
-            {
-                "timeframe": "60 days",
-                "actions": (
-                    "Launch contract reviews, supplier rationalization assessments, or sourcing wave analyses "
-                    "for validated high-priority opportunities."
-                ),
-            },
-            {
-                "timeframe": "90 days",
-                "actions": (
-                    "Convert validated findings into sourcing events, supplier governance actions, savings tracking, "
-                    "and recurring spend intelligence reporting."
-                ),
-            },
-        ]
+    contract_gap = spend_risk.get("contract_gap_spend", None)
+    contract_gap_display = (
+        format_currency(contract_gap)
+        if contract_gap is not None
+        else "Not evaluated"
     )
 
-    st.dataframe(make_display_table(plan), use_container_width=True, hide_index=True)
+    total_actions = len(pipeline) if pipeline is not None and not pipeline.empty else 0
+    high_priority_count = int((pipeline["priority"] == "High").sum()) if total_actions > 0 else 0
+    medium_priority_count = int((pipeline["priority"] == "Medium").sum()) if total_actions > 0 else 0
 
-    with st.container(border=True):
-        st.markdown("#### 6. Decisions Needed From Procurement Leadership")
-        st.markdown(
-            """
-- Which suppliers require immediate commercial or contract review?
-- Which supplier-family matches should be approved before consolidation analysis?
-- Which categories should move into sourcing wave assessment?
-- Which opportunities are addressable based on business requirements and contract constraints?
-- Which action owners should be assigned to the highest-priority pipeline items?
-            """
+    supplier_count = (
+        supplier_diagnostics["supplier"].nunique()
+        if supplier_diagnostics is not None and not supplier_diagnostics.empty
+        else 0
+    )
+
+    # Separate supplier-level risk from pipeline value.
+    # This prevents weird CPO language like "$0 at risk" while the tool still has action items.
+    if spend_at_risk > 0:
+        risk_summary = (
+            f"The diagnostic identified **{format_currency(spend_at_risk)}**, or "
+            f"**{format_percent(spend_at_risk_pct)}** of analyzed spend, associated with suppliers requiring action "
+            "based on available risk, performance, criticality, or contract signals."
+        )
+    elif total_actions > 0:
+        risk_summary = (
+            "The uploaded file did **not provide enough supplier-level risk evidence** to quantify supplier-level "
+            "spend-at-risk. However, the diagnostic still generated an action pipeline based on available sourcing, "
+            "spend concentration, supplier fragmentation, and validation signals."
+        )
+    else:
+        risk_summary = (
+            "The uploaded file did not provide enough evidence to quantify supplier-level spend-at-risk or generate "
+            "a meaningful action pipeline. Additional supplier performance, contract, and criticality fields would "
+            "improve the diagnostic."
         )
 
+    # Top attention areas
+    top_attention = []
+
+    if pipeline is not None and not pipeline.empty:
+        top_attention = pipeline.head(5)["opportunity_action"].astype(str).tolist()
+
+    # Contract wording should not overreach when contract_status is missing.
+    if contract_gap is not None:
+        contract_summary = (
+            f"Contract coverage exposure is estimated at **{contract_gap_display}** based on contract status data "
+            "provided in the file. Procurement should validate whether this represents true unmanaged spend, expired "
+            "coverage, or incomplete metadata."
+        )
+    else:
+        contract_summary = (
+            "Contract coverage was **not evaluated** because `contract_status` was not included in the uploaded file. "
+            "This should be treated as a data limitation, not an assumed contract risk."
+        )
+
+    # -----------------------------
+    # Header KPI cards
+    # -----------------------------
+    metric_cols = st.columns(5)
+    metric_cols[0].metric("Total Spend", format_currency(total_spend))
+    metric_cols[1].metric("Supplier Families", format_number(supplier_count))
+    metric_cols[2].metric("Pipeline Actions", format_number(total_actions))
+    metric_cols[3].metric("High Priority", format_number(high_priority_count))
+    metric_cols[4].metric("Data Readiness", f"{data_readiness.get('overall_score', 0)} / 100")
+
+    # -----------------------------
+    # Card 1: Executive Summary
+    # -----------------------------
     with st.container(border=True):
-        st.markdown("#### 7. Limitations")
+        st.markdown("### 1. Executive Summary")
+
         st.markdown(
             f"""
-This briefing is based on the uploaded ERP/spend extract and the current diagnostic rules. 
-The file may not include supplier performance, service levels, contract terms, market pricing, preferred supplier status, 
-or stakeholder feedback. Current data readiness score is **{readiness_score} / 100**. 
-Recommendations should be validated before execution.
-            """
+The diagnostic reviewed **{format_currency(total_spend)}** in supplier spend across **{format_number(supplier_count)} supplier families**.
+
+{risk_summary}
+
+The current action pipeline includes **{total_actions} recommended actions**, including **{high_priority_count} high-priority** and **{medium_priority_count} medium-priority** items.
+
+This output should be used as a **procurement triage view**: it identifies where leadership attention, category-owner validation, and follow-up analysis are required before action.
+"""
         )
+
+    # -----------------------------
+    # Card 2: Top Attention Areas
+    # -----------------------------
+    with st.container(border=True):
+        st.markdown("### 2. Top Attention Areas")
+
+        if top_attention:
+            for item in top_attention:
+                st.markdown(f"- {item}")
+        else:
+            st.info("No top attention areas were generated from the available data.")
+
+    # -----------------------------
+    # Card 3: Contract Coverage
+    # -----------------------------
+    with st.container(border=True):
+        st.markdown("### 3. Contract Coverage")
+
+        if contract_gap is not None:
+            st.markdown(contract_summary)
+        else:
+            st.warning(contract_summary)
+
+    # -----------------------------
+    # Card 4: Leadership Decisions Needed
+    # -----------------------------
+    with st.container(border=True):
+        st.markdown("### 4. Decisions Needed from Procurement Leadership")
+
+        st.markdown(
+            """
+- Which high-priority pipeline items should be validated first?
+- Which category owners should own each opportunity?
+- Which findings require supplier QBR escalation?
+- Which sourcing opportunities should move into business-case validation?
+- What additional data is needed before making contract, consolidation, or supplier-risk decisions?
+"""
+        )
+
+    # -----------------------------
+    # Card 5: 30 / 60 / 90 Day Action Plan
+    # -----------------------------
+    with st.container(border=True):
+        st.markdown("### 5. 30 / 60 / 90 Day Action Plan")
+
+        plan = pd.DataFrame(
+            [
+                {
+                    "timeframe": "30 days",
+                    "actions": "Validate the highest-priority action pipeline items, confirm owners, and review data gaps with category stakeholders.",
+                },
+                {
+                    "timeframe": "60 days",
+                    "actions": "Convert validated items into corrective action plans, sourcing reviews, supplier consolidation reviews, or contract validation workstreams.",
+                },
+                {
+                    "timeframe": "90 days",
+                    "actions": "Track approved actions through execution, monitor realized savings or risk mitigation, and establish recurring supplier performance governance.",
+                },
+            ]
+        )
+
+        st.dataframe(make_display_table(plan), use_container_width=True, hide_index=True)
+
+    # -----------------------------
+    # Card 6: Methodology / Caution
+    # -----------------------------
+    with st.container(border=True):
+        st.markdown("### 6. Methodology and Caution")
+
+        st.markdown(
+            f"""
+Current data readiness score is **{data_readiness.get("overall_score", 0)} / 100**.
+
+The briefing is generated from rule-based diagnostics using the fields available in the uploaded file. The tool avoids assuming supplier risk when key fields are missing. For example, missing contract status is treated as a **data limitation**, not as evidence of contract risk.
+
+Recommendations should be validated with category owners before supplier escalation, consolidation, contract review, or sourcing decisions.
+"""
+        )
+
 
 def render_data_readiness(results, supplier_normalization_summary, data_readiness, mapping):
     st.subheader("Data Readiness / Methodology")
