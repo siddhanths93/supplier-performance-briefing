@@ -26,7 +26,6 @@ from src.schema import ensure_optional_analysis_columns
 
 st.set_page_config(
     page_title="Supplier Performance & Spend Intelligence",
-    page_icon="📊",
     layout="wide",
 )
 
@@ -215,35 +214,120 @@ def make_display_table(data: pd.DataFrame) -> pd.DataFrame:
     ]
     return display_data
 
+def prepare_opportunity_display_table(opportunities: pd.DataFrame) -> pd.DataFrame:
+    display_data = opportunities.copy()
+    display_data = display_data.loc[:, ~display_data.columns.duplicated()]
+
+    currency_columns = [
+        "total_spend",
+        "estimated_savings_low",
+        "estimated_savings_high",
+    ]
+
+    for column in currency_columns:
+        if column in display_data.columns:
+            display_data[column] = display_data[column].apply(format_currency)
+
+    if "estimated_savings_range" in display_data.columns:
+        display_data["estimated_savings_range"] = display_data[
+            "estimated_savings_range"
+        ].astype(str)
+
+    return make_display_table(display_data)
+
+def render_recommendation_card(
+    recommendation: dict,
+    index: int,
+):
+    st.markdown(
+        f"""
+        <div class="section-card">
+            <h4>{index}. {recommendation["initiative"]}</h4>
+            <p><strong>Recommendation:</strong> {recommendation["recommendation"]}</p>
+            <p><strong>Rationale:</strong> {recommendation["rationale"]}</p>
+            <p><strong>Procurement action:</strong> {recommendation["procurement_action"]}</p>
+            <p>
+                <strong>Impact:</strong> {recommendation["estimated_savings_range"]} potential savings &nbsp; | &nbsp;
+                <strong>{recommendation["priority"]}</strong> priority &nbsp; | &nbsp;
+                {recommendation["difficulty"]} difficulty
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    categories = recommendation.get("categories", [])
+
+    if categories:
+        category_table = pd.DataFrame(categories)
+
+        display_columns = [
+            "category",
+            "current_suppliers",
+            "target_suppliers",
+            "estimated_savings_range",
+            "priority",
+        ]
+
+        available_columns = [
+            column
+            for column in display_columns
+            if column in category_table.columns
+        ]
+
+        with st.expander(
+            f"View categories included in {recommendation['initiative']}"
+        ):
+            st.dataframe(
+                make_display_table(category_table[available_columns]),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 # -------------------------------------------------------------------
 # Chart helpers
 # -------------------------------------------------------------------
 
-def apply_chart_layout(fig, height: int = 420):
+def apply_chart_layout(fig, height: int = 390):
     fig.update_layout(
         height=height,
-        margin=dict(l=20, r=20, t=60, b=30),
+        margin=dict(l=20, r=20, t=55, b=20),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(size=13),
-        title=dict(font=dict(size=18)),
+        font=dict(size=12),
+        title=dict(font=dict(size=17)),
         legend=dict(
             orientation="h",
-            yanchor="bottom",
-            y=-0.25,
+            yanchor="top",
+            y=-0.08,
             xanchor="center",
             x=0.5,
         ),
     )
+
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="#e5e7eb",
+        zeroline=False,
+    )
+
+    fig.update_yaxes(
+        showgrid=False,
+        zeroline=False,
+    )
+
     return fig
 
 
-def show_chart_or_message(fig, message: str):
+def show_chart_or_message(fig, message: str, key: str):
     if fig is None:
         st.info(message)
     else:
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            key=key,
+        )
 
 
 def create_top_suppliers_chart(data: pd.DataFrame):
@@ -456,7 +540,7 @@ def create_opportunity_savings_chart(opportunities: pd.DataFrame):
     if not required_columns.issubset(opportunities.columns):
         return None
 
-    chart_data = (
+    wide_data = (
         opportunities.groupby("category", dropna=False)[
             ["estimated_savings_low", "estimated_savings_high"]
         ]
@@ -467,22 +551,43 @@ def create_opportunity_savings_chart(opportunities: pd.DataFrame):
         .sort_values(by="estimated_savings_high", ascending=True)
     )
 
+    chart_data = wide_data.melt(
+        id_vars="category",
+        value_vars=[
+            "estimated_savings_low",
+            "estimated_savings_high",
+        ],
+        var_name="estimate_type",
+        value_name="estimated_savings",
+    )
+
+    chart_data["estimate_type"] = chart_data["estimate_type"].replace(
+        {
+            "estimated_savings_low": "Low estimate",
+            "estimated_savings_high": "High estimate",
+        }
+    )
+
     fig = px.bar(
         chart_data,
-        x=["estimated_savings_low", "estimated_savings_high"],
+        x="estimated_savings",
         y="category",
+        color="estimate_type",
         orientation="h",
         barmode="group",
-        title="Estimated Savings Range by Category",
+        title="Top Categories by Estimated Savings Potential",
         labels={
-            "value": "Estimated Savings",
+            "estimated_savings": "Estimated Savings",
             "category": "Category",
-            "variable": "Savings Estimate",
+            "estimate_type": "Savings Estimate",
         },
     )
 
-    return apply_chart_layout(fig)
+    fig.update_layout(
+        legend_title_text="Savings Estimate",
+    )
 
+    return apply_chart_layout(fig)
 
 def create_opportunity_type_chart(opportunities: pd.DataFrame):
     if opportunities.empty or "opportunity_type" not in opportunities.columns:
@@ -661,8 +766,13 @@ def create_rationalization_opportunities(
             savings_low = total_spend * low_pct
             savings_high = total_spend * high_pct
 
+            target_supplier_count = max(
+                2,
+                round(supplier_count * 0.6),
+            )
+
             suggested_reduction = max(
-                supplier_count - max(2, round(supplier_count * 0.6)),
+                supplier_count - target_supplier_count,
                 1,
             )
 
@@ -673,8 +783,10 @@ def create_rationalization_opportunities(
                     "current_suppliers": supplier_count,
                     "total_spend": total_spend,
                     "suggested_supplier_reduction": suggested_reduction,
+                    "suggested_target_suppliers": target_supplier_count,
                     "rationale": (
-                        f"{category} has {supplier_count} suppliers, indicating potential fragmentation."
+                        f"{category} has {supplier_count} suppliers. A focused preferred-supplier review "
+                        f"could target approximately {target_supplier_count} suppliers while maintaining coverage."
                     ),
                     "estimated_savings_low": savings_low,
                     "estimated_savings_high": savings_high,
@@ -687,7 +799,7 @@ def create_rationalization_opportunities(
                         "Fragmented category",
                     ),
                     "next_action": (
-                        f"Review supplier overlap in {category} and identify preferred suppliers."
+                        f"Segment {category} suppliers by spend, region, and service overlap; identify preferred suppliers and transition tail suppliers where feasible."
                     ),
                 }
             )
@@ -831,98 +943,329 @@ def summarize_opportunity_pipeline(
 
 
 def create_procurement_recommendations(
-        opportunities: pd.DataFrame,
+    opportunities: pd.DataFrame,
 ) -> list[dict]:
     if opportunities.empty:
         return [
             {
+                "initiative": "Improve spend data completeness",
                 "recommendation": (
-                    "Improve spend file completeness before deeper sourcing analysis."
+                    "Improve the uploaded spend file before deeper sourcing analysis."
                 ),
-                "why_it_matters": (
-                    "The uploaded file may have limited category, supplier, contract, or transaction detail."
+                "rationale": (
+                    "The file may have limited supplier, category, contract, or transaction-level detail."
+                ),
+                "procurement_action": (
+                    "Add category, business unit, region, contract status, payment terms, "
+                    "transaction date, and supplier identifiers where available."
                 ),
                 "expected_benefit": (
                     "Better classification, richer sourcing insights, and stronger savings estimates."
                 ),
-                "next_action": (
-                    "Upload category, business unit, region, contract status, payment terms, and transaction date where available."
-                ),
-                "difficulty": "Low",
-                "priority": "Medium",
+                "categories": [],
                 "estimated_savings_range": "Not estimated",
+                "priority": "Medium",
+                "difficulty": "Low",
             }
         ]
 
     recommendations = []
 
-    for _, row in opportunities.head(8).iterrows():
-        category = row["category"]
-        opportunity_type = row["opportunity_type"]
+    grouped_opportunities = opportunities.groupby(
+        "opportunity_type",
+        dropna=False,
+    )
+
+    for opportunity_type, group in grouped_opportunities:
+        group = group.sort_values(
+            by="estimated_savings_high",
+            ascending=False,
+        )
+
+        total_low = float(group["estimated_savings_low"].sum())
+        total_high = float(group["estimated_savings_high"].sum())
+
+        high_priority_count = int(
+            (group["priority"] == "High").sum()
+        )
+
+        priority = (
+            "High"
+            if high_priority_count > 0
+            else "Medium"
+            if len(group) >= 2
+            else "Low"
+        )
+
+        category_rows = []
+
+        for _, row in group.head(8).iterrows():
+            category_rows.append(
+                {
+                    "category": row["category"],
+                    "current_suppliers": int(row.get("current_suppliers", 0)),
+                    "target_suppliers": (
+                        int(row["suggested_target_suppliers"])
+                        if "suggested_target_suppliers" in row
+                        and pd.notna(row["suggested_target_suppliers"])
+                        else None
+                    ),
+                    "estimated_savings_range": row["estimated_savings_range"],
+                    "priority": row["priority"],
+                }
+            )
 
         if opportunity_type == "Fragmented category":
+            initiative = "Preferred supplier rationalization"
+
             recommendation = (
-                f"Rationalize suppliers in {category} by narrowing the supplier base "
-                f"from {row['current_suppliers']} suppliers."
+                "Launch a preferred-supplier rationalization program across fragmented categories."
             )
-            benefit = (
-                "Reduced fragmentation, stronger negotiation leverage, and easier supplier governance."
+
+            rationale = (
+                "Several categories have broad supplier bases, which may dilute buying leverage, "
+                "increase supplier management effort, and make it harder to enforce preferred buying channels."
             )
+
+            procurement_action = (
+                "Prioritize the largest fragmented categories, segment suppliers by spend and business coverage, "
+                "then define preferred suppliers while protecting operational continuity."
+            )
+
+            expected_benefit = (
+                "Stronger negotiation leverage, simpler supplier governance, and reduced long-tail complexity."
+            )
+
             difficulty = "Medium"
 
         elif opportunity_type == "Tail spend cleanup":
+            initiative = "Tail spend cleanup"
+
             recommendation = (
-                f"Clean up tail spend in {category} by consolidating low-spend suppliers."
+                "Create a tail-spend cleanup workstream for low-spend suppliers."
             )
-            benefit = (
-                "Lower administrative effort, reduced supplier count, and improved catalog compliance."
+
+            rationale = (
+                "Low-spend suppliers can create disproportionate process cost through vendor maintenance, "
+                "PO processing, fragmented buying, and compliance leakage."
             )
+
+            procurement_action = (
+                "Move recurring low-value purchases to catalogs, preferred suppliers, P-cards, blanket POs, "
+                "or buying channels with lighter governance."
+            )
+
+            expected_benefit = (
+                "Lower administrative effort, cleaner supplier master data, and improved buying compliance."
+            )
+
             difficulty = "Low"
 
         elif opportunity_type == "No contract coverage":
+            initiative = "Contract coverage review"
+
             recommendation = (
-                f"Review contract coverage in {category} and negotiate pricing or terms where contracts are missing."
+                "Review categories with apparent contract coverage gaps."
             )
-            benefit = (
-                "Improved commercial control and reduced unmanaged spend exposure."
+
+            rationale = (
+                "Spend without active contract coverage may be exposed to pricing leakage, weak terms, "
+                "unclear service levels, or inconsistent supplier governance."
             )
+
+            procurement_action = (
+                "Validate contract status, then prioritize renewals, renegotiations, preferred agreements, "
+                "or sourcing events for uncovered spend."
+            )
+
+            expected_benefit = (
+                "Improved commercial control, stronger payment and service terms, and reduced unmanaged spend exposure."
+            )
+
             difficulty = "Medium"
 
         else:
-            recommendation = f"Review sourcing opportunity in {category}."
-            benefit = "Potential savings and better supplier management."
+            initiative = "Sourcing opportunity review"
+
+            recommendation = (
+                f"Review {opportunity_type} opportunities across relevant categories."
+            )
+
+            rationale = (
+                "The data suggests potential sourcing or supplier management improvement areas."
+            )
+
+            procurement_action = (
+                "Review category-level spend, supplier overlap, business unit usage, and contract coverage."
+            )
+
+            expected_benefit = (
+                "Potential savings and improved procurement control."
+            )
+
             difficulty = "Medium"
 
         recommendations.append(
             {
+                "initiative": initiative,
                 "recommendation": recommendation,
-                "why_it_matters": row["rationale"],
-                "expected_benefit": benefit,
-                "next_action": row["next_action"],
+                "rationale": rationale,
+                "procurement_action": procurement_action,
+                "expected_benefit": expected_benefit,
+                "categories": category_rows,
+                "estimated_savings_range": (
+                    f"${total_low:,.0f} - ${total_high:,.0f}"
+                ),
+                "priority": priority,
                 "difficulty": difficulty,
-                "priority": row["priority"],
-                "estimated_savings_range": row["estimated_savings_range"],
             }
         )
 
+    priority_order = {
+        "High": 1,
+        "Medium": 2,
+        "Low": 3,
+    }
+
+    recommendations = sorted(
+        recommendations,
+        key=lambda item: (
+            priority_order.get(item["priority"], 99),
+            -float(
+                item["estimated_savings_range"]
+                .split(" - ")[1]
+                .replace("$", "")
+                .replace(",", "")
+            )
+            if item["estimated_savings_range"] != "Not estimated"
+            else 0,
+        ),
+    )
+
     return recommendations
-
-
 # -------------------------------------------------------------------
 # Processing helpers
 # -------------------------------------------------------------------
 
+def score_uploaded_sheet(data: pd.DataFrame) -> int:
+    """
+    Score a sheet based on whether it looks like transaction-level spend data.
+    Higher score = better candidate for analysis.
+    """
+    if data.empty:
+        return 0
+
+    normalized_columns = [
+        str(column).strip().lower().replace("_", " ")
+        for column in data.columns
+    ]
+
+    score = 0
+
+    supplier_signals = [
+        "supplier name",
+        "supplier",
+        "vendor name",
+        "vendor",
+    ]
+
+    spend_signals = [
+        "spend amount usd",
+        "spend amount",
+        "invoice amount",
+        "po amount",
+        "amount",
+        "total spend",
+        "original currency amount",
+    ]
+
+    description_signals = [
+        "item description",
+        "description",
+        "transaction description",
+    ]
+
+    date_signals = [
+        "invoice date",
+        "posting date",
+        "transaction date",
+    ]
+
+    category_signals = [
+        "category",
+        "category l1",
+        "category l2",
+        "commodity",
+        "subcategory",
+    ]
+
+    for column in normalized_columns:
+        if column in supplier_signals:
+            score += 30
+        if column in spend_signals:
+            score += 30
+        if column in description_signals:
+            score += 15
+        if column in date_signals:
+            score += 10
+        if column in category_signals:
+            score += 10
+
+    # Real spend tabs usually have many rows.
+    if len(data) > 20:
+        score += 10
+
+    return score
+
+
 def load_uploaded_data(uploaded_file) -> pd.DataFrame:
+    """
+    Load CSV or Excel upload.
+
+    For multi-sheet Excel files, automatically choose the sheet that
+    looks most like spend transaction data.
+    """
     file_name = uploaded_file.name.lower()
 
     if file_name.endswith(".csv"):
         return pd.read_csv(uploaded_file)
 
     if file_name.endswith(".xlsx") or file_name.endswith(".xls"):
-        return pd.read_excel(uploaded_file)
+        excel_file = pd.ExcelFile(uploaded_file)
 
-    raise ValueError("Unsupported file type. Please upload a CSV or Excel file.")
+        best_sheet_name = None
+        best_sheet_data = None
+        best_score = -1
 
+        for sheet_name in excel_file.sheet_names:
+            candidate_data = pd.read_excel(
+                uploaded_file,
+                sheet_name=sheet_name,
+            )
+
+            candidate_score = score_uploaded_sheet(
+                candidate_data
+            )
+
+            if candidate_score > best_score:
+                best_score = candidate_score
+                best_sheet_name = sheet_name
+                best_sheet_data = candidate_data
+
+        if best_sheet_data is None:
+            raise ValueError(
+                "No readable sheet found in the uploaded Excel file."
+            )
+
+        st.sidebar.success(
+            f"Using Excel sheet: {best_sheet_name}"
+        )
+
+        return best_sheet_data
+
+    raise ValueError(
+        "Unsupported file type. Please upload a CSV or Excel file."
+    )
 
 def create_category_metrics(data: pd.DataFrame) -> pd.DataFrame:
     if (
@@ -1170,17 +1513,25 @@ def main():
 
     st.markdown(
         """
-        <div class="hero-card">
-            <h2>Supplier Performance & Spend Intelligence Dashboard</h2>
-            <p>
-            Upload supplier spend or performance data to identify where money is going,
-            classify suppliers, detect rationalization opportunities, estimate savings,
-            and generate procurement next actions.
-            </p>
-            <p>
-            <strong>Portfolio demo:</strong> Python, Streamlit, Pandas, Plotly, OpenPyXL, and Pytest.
-            </p>
-        </div>
+    <div class="hero-card">
+      <div style="text-transform: uppercase; letter-spacing: 0.35em; font-size: 0.78rem; color: #93c5fd; margin-bottom: 0.85rem; font-weight: 700;">
+        Sid&apos;s Portfolio
+      </div>
+
+      <h2 style="color: white; margin-bottom: 0.7rem; font-size: 2rem; font-weight: 800;">
+        Supplier Performance &amp; Spend Intelligence Dashboard
+      </h2>
+
+      <p style="color: #dbeafe; font-size: 1rem; line-height: 1.6; margin-bottom: 0.8rem;">
+        Upload supplier spend or performance data to identify where money is going,
+        classify suppliers, detect rationalization opportunities, estimate savings,
+        and generate procurement next actions.
+      </p>
+
+      <p style="color: #dbeafe; font-size: 1rem; line-height: 1.6;">
+        <strong>Portfolio demo:</strong> Python, Streamlit, Pandas, Plotly, OpenPyXL, and Pytest.
+      </p>
+    </div>
         """,
         unsafe_allow_html=True,
     )
@@ -1333,7 +1684,7 @@ def main():
             else 0
         )
 
-        summary_columns = st.columns(5)
+        summary_columns = st.columns(6)
 
         summary_columns[0].metric(
             "Total spend analyzed",
@@ -1356,8 +1707,13 @@ def main():
         )
 
         summary_columns[4].metric(
-            "Est. savings range",
-            f"{format_currency(opportunity_summary['estimated_savings_low'])} - {format_currency(opportunity_summary['estimated_savings_high'])}",
+            "Savings low",
+            format_currency(opportunity_summary["estimated_savings_low"]),
+        )
+
+        summary_columns[5].metric(
+            "Savings high",
+            format_currency(opportunity_summary["estimated_savings_high"]),
         )
 
         st.markdown(
@@ -1379,38 +1735,44 @@ def main():
             show_chart_or_message(
                 create_top_categories_chart(filtered_supplier_data),
                 "Category spend chart is not available for this file.",
+                key="executive_top_categories_chart",
             )
 
         with right_chart_column:
             show_chart_or_message(
                 create_opportunity_savings_chart(rationalization_opportunities),
                 "Savings opportunity chart is not available yet.",
+                key="executive_opportunity_savings_chart",
             )
 
         st.divider()
 
-        st.subheader("Top recommended actions")
+        st.subheader("Top recommended procurement initiatives")
 
         for index, recommendation in enumerate(
-                procurement_recommendations[:5],
+                procurement_recommendations[:3],
                 start=1,
         ):
-            st.markdown(
-                f"""
-                <div class="section-card">
-                    <h4>{index}. {recommendation["recommendation"]}</h4>
-                    <p><strong>Why this matters:</strong> {recommendation["why_it_matters"]}</p>
-                    <p><strong>Expected benefit:</strong> {recommendation["expected_benefit"]}</p>
-                    <p><strong>Next action:</strong> {recommendation["next_action"]}</p>
-                    <p>
-                        <strong>Estimated savings:</strong> {recommendation["estimated_savings_range"]} &nbsp; | &nbsp;
-                        <strong>Priority:</strong> {recommendation["priority"]} &nbsp; | &nbsp;
-                        <strong>Difficulty:</strong> {recommendation["difficulty"]}
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            render_recommendation_card(
+                recommendation,
+                index,
             )
+
+            # st.markdown(
+            #     f"""
+            #     <div class="section-card">
+            #         <h4>{index}. {recommendation["recommendation"]}</h4>
+            #         <p><strong>Rationale:</strong> {recommendation["why_it_matters"]}</p>
+            #         <p><strong>Procurement action:</strong> {recommendation["next_action"]}</p>
+            #         <p>
+            #             <strong>Impact:</strong> {recommendation["estimated_savings_range"]} potential savings &nbsp; | &nbsp;
+            #             <strong>{recommendation["priority"]}</strong> priority &nbsp; | &nbsp;
+            #             {recommendation["difficulty"]} difficulty
+            #         </p>
+            #     </div>
+            #     """,
+            #     unsafe_allow_html=True,
+            # )
 
     with spend_tab:
         st.subheader("Spend analysis")
@@ -1448,12 +1810,14 @@ def main():
             show_chart_or_message(
                 create_top_suppliers_chart(filtered_supplier_data),
                 "Top supplier chart is not available for this file.",
+                key="spend_top_suppliers_chart",
             )
 
         with chart_column_2:
             show_chart_or_message(
                 create_top_categories_chart(filtered_supplier_data),
                 "Top category chart is not available for this file.",
+                key="spend_top_categories_chart",
             )
 
         st.divider()
@@ -1464,12 +1828,14 @@ def main():
             show_chart_or_message(
                 create_supplier_count_by_category_chart(filtered_supplier_data),
                 "Supplier count by category chart is not available for this file.",
+                key="spend_supplier_count_by_category_chart",
             )
 
         with chart_column_4:
             show_chart_or_message(
                 create_monthly_spend_trend_chart(filtered_supplier_data),
                 "Spend trend chart is not available because usable date fields were not found.",
+                key="spend_monthly_trend_chart",
             )
 
         st.divider()
@@ -1480,12 +1846,14 @@ def main():
             show_chart_or_message(
                 create_spend_by_region_chart(filtered_supplier_data),
                 "Spend by region chart is not available for this file.",
+                key="spend_by_region_chart",
             )
 
         with chart_column_6:
             show_chart_or_message(
                 create_spend_by_business_unit_chart(filtered_supplier_data),
                 "Spend by business unit chart is not available for this file.",
+                key="spend_by_business_unit_chart",
             )
 
         st.divider()
@@ -1571,12 +1939,14 @@ def main():
                 show_chart_or_message(
                     create_opportunity_savings_chart(rationalization_opportunities),
                     "Savings by category chart is not available.",
+                    key="rationalization_opportunity_savings_chart",
                 )
 
             with right_opportunity_chart:
                 show_chart_or_message(
                     create_opportunity_type_chart(rationalization_opportunities),
                     "Opportunity mix chart is not available.",
+                    key="rationalization_opportunity_type_chart",
                 )
 
             st.divider()
@@ -1584,19 +1954,21 @@ def main():
             show_chart_or_message(
                 create_priority_chart(rationalization_opportunities),
                 "Priority chart is not available.",
+                key="rationalization_priority_chart",
             )
 
             st.divider()
 
-            st.subheader("Opportunity detail")
+            st.subheader("Prioritized opportunity pipeline")
 
             opportunity_display_columns = [
                 "priority",
                 "opportunity_type",
                 "category",
                 "current_suppliers",
-                "total_spend",
                 "suggested_supplier_reduction",
+                "suggested_target_suppliers",
+                "total_spend",
                 "estimated_savings_range",
                 "rationale",
                 "next_action",
@@ -1609,7 +1981,7 @@ def main():
             ]
 
             st.dataframe(
-                make_display_table(
+                prepare_opportunity_display_table(
                     rationalization_opportunities[
                         available_opportunity_display_columns
                     ]
@@ -1656,35 +2028,27 @@ def main():
             show_chart_or_message(
                 create_opportunity_savings_chart(rationalization_opportunities),
                 "Savings chart is not available.",
+                key="savings_opportunity_savings_chart",
             )
 
         with right_savings_chart:
             show_chart_or_message(
                 create_priority_chart(rationalization_opportunities),
                 "Priority chart is not available.",
+                key="savings_priority_chart",
             )
 
         st.divider()
+
+        st.subheader("Recommended savings initiatives")
 
         for index, recommendation in enumerate(
                 procurement_recommendations,
                 start=1,
         ):
-            st.markdown(
-                f"""
-                <div class="section-card">
-                    <h4>{index}. {recommendation["recommendation"]}</h4>
-                    <p><strong>Why this matters:</strong> {recommendation["why_it_matters"]}</p>
-                    <p><strong>Expected benefit:</strong> {recommendation["expected_benefit"]}</p>
-                    <p><strong>Suggested next action:</strong> {recommendation["next_action"]}</p>
-                    <p>
-                        <strong>Savings range:</strong> {recommendation["estimated_savings_range"]} &nbsp; | &nbsp;
-                        <strong>Priority:</strong> {recommendation["priority"]} &nbsp; | &nbsp;
-                        <strong>Difficulty:</strong> {recommendation["difficulty"]}
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            render_recommendation_card(
+                recommendation,
+                index,
             )
 
     with methodology_tab:

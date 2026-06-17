@@ -1,160 +1,123 @@
-from __future__ import annotations
-
+import re
+from collections import defaultdict
 from io import BytesIO
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from rapidfuzz import fuzz, process
 
-from src.aggregation import (
-    aggregate_supplier_category_data,
-    create_aggregation_summary,
-    should_aggregate_supplier_data,
-)
-from src.classification import (
-    classify_spend_data,
-    summarize_classification_coverage,
-)
-from src.cleaning import clean_supplier_data
-from src.column_mapping import map_columns
-from src.data_readiness import create_data_readiness_report
-from src.date_utils import (
-    add_invoice_period_columns,
-    summarize_date_coverage,
-)
-from src.schema import ensure_optional_analysis_columns
+
+# ============================================================
+# PAGE CONFIG
+# ============================================================
 
 st.set_page_config(
-    page_title="Supplier Performance & Spend Intelligence",
+    page_title="Supplier Performance Diagnostic Workbench",
     layout="wide",
 )
 
 
-# -------------------------------------------------------------------
-# Styling
-# -------------------------------------------------------------------
+# ============================================================
+# GLOBAL STYLING
+# ============================================================
 
-def apply_custom_styles():
+def apply_global_styles():
     st.markdown(
         """
         <style>
-        .block-container {
-            padding-top: 2rem;
-            padding-bottom: 3rem;
-            max-width: 1450px;
-        }
-
-        h1, h2, h3 {
-            color: #0f172a;
-            font-weight: 800 !important;
-        }
-
-        div[data-testid="stMetric"] {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            padding: 1rem 1rem;
-            border-radius: 16px;
-            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
-        }
-
-        div[data-testid="stMetricLabel"] {
-            font-size: 0.78rem;
-            color: #64748b;
-            font-weight: 700;
-        }
-
-        div[data-testid="stMetricValue"] {
-            font-size: 1.45rem;
-            color: #0f172a;
-            font-weight: 850;
+        .main {
+            background-color: #f8fafc;
         }
 
         .hero-card {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #0e7490 100%);
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #312e81 100%);
+            padding: 2.2rem;
+            border-radius: 1.4rem;
             color: white;
-            border-radius: 24px;
-            padding: 1.8rem 2rem;
-            margin-bottom: 1.4rem;
-            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.20);
+            margin-bottom: 1.5rem;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.25);
         }
 
-        .hero-card h2 {
-            color: white;
-            margin-bottom: 0.5rem;
-            font-size: 2rem;
+        .hero-label {
+            text-transform: uppercase;
+            letter-spacing: 0.32em;
+            font-size: 0.78rem;
+            color: #bfdbfe;
+            margin-bottom: 0.9rem;
+            font-weight: 700;
         }
 
-        .hero-card p {
+        .hero-title {
+            color: white;
+            margin-bottom: 0.75rem;
+            font-size: 2.25rem;
+            font-weight: 850;
+            line-height: 1.1;
+        }
+
+        .hero-subtitle {
             color: #dbeafe;
-            font-size: 1rem;
-            line-height: 1.6;
+            font-size: 1.02rem;
+            line-height: 1.65;
+            max-width: 1100px;
         }
 
         .section-card {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 18px;
-            padding: 1.2rem 1.35rem;
-            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.07);
+            background-color: white;
+            padding: 1.2rem 1.3rem;
+            border-radius: 1rem;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
             margin-bottom: 1rem;
         }
 
-        .section-card h4 {
-            color: #0f172a;
-            margin-bottom: 0.55rem;
-            font-size: 1.05rem;
-        }
-
-        .section-card p {
-            color: #334155;
-            line-height: 1.55;
-            margin-bottom: 0.45rem;
-        }
-
-        .insight-box {
+        .callout-card {
             background: #eff6ff;
-            border-left: 5px solid #2563eb;
-            padding: 1rem 1.2rem;
-            border-radius: 12px;
+            border: 1px solid #bfdbfe;
+            padding: 1.1rem 1.2rem;
+            border-radius: 1rem;
             color: #1e3a8a;
-            margin: 0.75rem 0 1rem 0;
+            margin-bottom: 1rem;
         }
 
-        .warning-box {
+        .warning-card {
             background: #fffbeb;
-            border-left: 5px solid #f59e0b;
-            padding: 1rem 1.2rem;
-            border-radius: 12px;
+            border: 1px solid #fde68a;
+            padding: 1.1rem 1.2rem;
+            border-radius: 1rem;
             color: #92400e;
-            margin: 0.75rem 0 1rem 0;
+            margin-bottom: 1rem;
+        }
+
+        .risk-high {
+            color: #991b1b;
+            font-weight: 700;
+        }
+
+        .risk-medium {
+            color: #92400e;
+            font-weight: 700;
+        }
+
+        .risk-low {
+            color: #166534;
+            font-weight: 700;
         }
 
         .small-muted {
             color: #64748b;
             font-size: 0.9rem;
-            line-height: 1.55;
         }
 
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 0.35rem;
+        div[data-testid="stMetricValue"] {
+            font-size: 1.6rem;
+            font-weight: 800;
         }
 
-        .stTabs [data-baseweb="tab"] {
-            border-radius: 999px;
-            padding: 0.5rem 1rem;
-            background: #f8fafc;
-            border: 1px solid #e5e7eb;
-        }
-
-        .stTabs [aria-selected="true"] {
-            background: #0f172a !important;
-            color: white !important;
-        }
-
-        div[data-testid="stDataFrame"] {
-            border-radius: 14px;
-            overflow: hidden;
-            border: 1px solid #e5e7eb;
+        div[data-testid="stMetricLabel"] {
+            color: #475569;
+            font-weight: 600;
         }
         </style>
         """,
@@ -162,2020 +125,2127 @@ def apply_custom_styles():
     )
 
 
-# -------------------------------------------------------------------
-# Formatting helpers
-# -------------------------------------------------------------------
+# ============================================================
+# FORMAT HELPERS
+# ============================================================
 
 def format_currency(value):
     try:
-        if pd.isna(value):
-            return "N/A"
-        return f"${float(value):,.0f}"
+        value = float(value)
     except Exception:
-        return "N/A"
+        return "Not available"
 
-
-def format_number(value):
-    try:
-        if pd.isna(value):
-            return "N/A"
-        return f"{float(value):,.0f}"
-    except Exception:
-        return "N/A"
+    if abs(value) >= 1_000_000_000:
+        return f"${value / 1_000_000_000:.1f}B"
+    if abs(value) >= 1_000_000:
+        return f"${value / 1_000_000:.1f}M"
+    if abs(value) >= 1_000:
+        return f"${value / 1_000:.1f}K"
+    return f"${value:,.0f}"
 
 
 def format_percent(value):
     try:
-        if pd.isna(value):
-            return "N/A"
         return f"{float(value):.1f}%"
     except Exception:
-        return "N/A"
+        return "Not available"
 
 
-def prettify_column_name(column_name: str) -> str:
-    return (
-        str(column_name)
-        .replace("_", " ")
-        .replace("pct", "%")
-        .title()
-        .replace("Otd", "OTD")
-        .replace("Po ", "PO ")
-        .replace("Gl ", "GL ")
-        .replace("Id", "ID")
+def format_number(value):
+    try:
+        return f"{float(value):,.0f}"
+    except Exception:
+        return "Not available"
+
+
+def prettify_column_name(column_name):
+    return str(column_name).replace("_", " ").title()
+
+
+def make_display_table(df):
+    display = df.copy()
+    display.columns = [prettify_column_name(col) for col in display.columns]
+    return display
+
+
+def apply_chart_layout(fig, height=420):
+    fig.update_layout(
+        height=height,
+        margin=dict(l=20, r=20, t=65, b=30),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=dict(size=12),
+        title=dict(font=dict(size=18)),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5),
+    )
+    return fig
+
+
+def show_chart_or_message(fig, message, key):
+    if fig is None:
+        st.info(message)
+    else:
+        st.plotly_chart(fig, use_container_width=True, key=key)
+
+
+# ============================================================
+# COLUMN MAPPING
+# ============================================================
+
+COLUMN_ALIASES = {
+    "supplier_name": [
+        "supplier_name", "supplier name", "supplier", "vendor", "vendor name",
+        "vendor_name", "supplier_nm", "suppliername", "supplier family",
+    ],
+    "annual_spend": [
+        "annual_spend", "annual spend", "spend", "spend amount", "spend_amount",
+        "invoice amount", "invoice_amount", "totalcost", "total cost", "total_cost",
+        "total amount", "total_amount", "amount", "purchase amount", "purchase_amount",
+        "spend_amount_usd", "spend amount usd", "usd spend", "extended cost",
+    ],
+    "category": [
+        "category", "spend category", "category_l1", "category l1",
+        "commodity", "commodity group", "item category", "procurement category",
+    ],
+    "description": [
+        "description", "item description", "item_description", "itemname",
+        "item name", "item_name", "product", "product name", "transaction description",
+    ],
+    "business_unit": [
+        "business_unit", "business unit", "bu", "department", "dept", "cost center",
+        "cost_center", "function",
+    ],
+    "region": [
+        "region", "geo", "geography", "market", "territory",
+    ],
+    "country": [
+        "country", "supplier country", "country_name", "location country",
+    ],
+    "contract_status": [
+        "contract_status", "contract status", "contract", "agreement status",
+        "contract coverage", "contract_coverage",
+    ],
+    "supplier_criticality": [
+        "supplier_criticality", "supplier criticality", "criticality",
+        "business criticality", "critical supplier", "risk criticality",
+    ],
+    "on_time_delivery": [
+        "on_time_delivery", "on time delivery", "otd", "otd_percent",
+        "otd percentage", "delivery performance", "delivery score",
+    ],
+    "prior_year_otd": [
+        "prior_year_otd", "prior year otd", "previous year otd", "last year otd",
+        "prior_otd", "py otd",
+    ],
+    "defect_rate": [
+        "defect_rate", "defect rate", "quality defect rate", "defects",
+        "quality score", "quality_defect_rate",
+    ],
+    "prior_year_defect_rate": [
+        "prior_year_defect_rate", "prior year defect rate", "previous year defect rate",
+        "prior defect rate", "py defect rate",
+    ],
+    "lead_time_days": [
+        "lead_time_days", "lead time days", "lead time", "leadtime", "avg lead time",
+        "average lead time",
+    ],
+    "invoice_count": [
+        "invoice_count", "invoice count", "invoices", "number of invoices",
+    ],
+    "po_count": [
+        "po_count", "po count", "purchase orders", "purchase order count",
+    ],
+    "buyer": [
+        "buyer", "buyer name", "buyer_name", "purchaser", "requester",
+    ],
+    "payment_terms": [
+        "payment_terms", "payment terms", "terms", "supplier payment terms",
+    ],
+    "invoice_date": [
+        "invoice_date", "invoice date", "purchase_date", "purchase date",
+        "purchasedate", "transaction date", "transaction_date", "date",
+    ],
+    "quantity": [
+        "quantity", "qty", "order quantity", "order_quantity",
+    ],
+    "unit_price": [
+        "unit_price", "unit price", "unitprice", "price", "unit cost", "unit_cost",
+    ],
+}
+
+
+def normalize_column_name(column):
+    normalized = str(column).strip().lower()
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def build_column_mapping(df):
+    original_columns = list(df.columns)
+    normalized_to_original = {normalize_column_name(col): col for col in original_columns}
+
+    mapping = {}
+
+    for standard_col, aliases in COLUMN_ALIASES.items():
+        for alias in aliases:
+            normalized_alias = normalize_column_name(alias)
+            if normalized_alias in normalized_to_original:
+                mapping[normalized_to_original[normalized_alias]] = standard_col
+                break
+
+    return mapping
+
+
+def standardize_columns(df):
+    data = df.copy()
+    mapping = build_column_mapping(data)
+    data = data.rename(columns=mapping)
+
+    # If annual spend is missing but quantity and unit price exist, calculate it.
+    if "annual_spend" not in data.columns and {"quantity", "unit_price"}.issubset(data.columns):
+        data["quantity"] = pd.to_numeric(data["quantity"], errors="coerce").fillna(0)
+        data["unit_price"] = pd.to_numeric(data["unit_price"], errors="coerce").fillna(0)
+        data["annual_spend"] = data["quantity"] * data["unit_price"]
+
+    # If required analytical columns are missing, degrade gracefully.
+    if "supplier_name" not in data.columns:
+        data["supplier_name"] = "Unknown Supplier"
+
+    if "annual_spend" not in data.columns:
+        data["annual_spend"] = 0
+
+    if "category" not in data.columns:
+        data["category"] = "Unclassified"
+
+    data["supplier_name"] = data["supplier_name"].fillna("Unknown Supplier").astype(str)
+    data["category"] = data["category"].fillna("Unclassified").astype(str)
+
+    data["annual_spend"] = (
+        data["annual_spend"]
+        .astype(str)
+        .str.replace("$", "", regex=False)
+        .str.replace(",", "", regex=False)
+    )
+    data["annual_spend"] = pd.to_numeric(data["annual_spend"], errors="coerce").fillna(0)
+
+    numeric_columns = [
+        "on_time_delivery",
+        "prior_year_otd",
+        "defect_rate",
+        "prior_year_defect_rate",
+        "lead_time_days",
+        "invoice_count",
+        "po_count",
+        "quantity",
+        "unit_price",
+    ]
+
+    for column in numeric_columns:
+        if column in data.columns:
+            data[column] = pd.to_numeric(data[column], errors="coerce")
+
+    # Convert decimal percentages to percentage-point scale if needed.
+    for column in ["on_time_delivery", "prior_year_otd", "defect_rate", "prior_year_defect_rate"]:
+        if column in data.columns:
+            valid = data[column].dropna()
+            if not valid.empty and valid.max() <= 1:
+                data[column] = data[column] * 100
+
+    if "invoice_date" in data.columns:
+        data["invoice_date"] = pd.to_datetime(data["invoice_date"], errors="coerce")
+
+    return data, mapping
+
+
+# ============================================================
+# FILE LOADING
+# ============================================================
+
+def score_sheet_for_spend_data(df):
+    if df.empty:
+        return 0
+
+    columns = [normalize_column_name(col) for col in df.columns]
+    score = 0
+
+    supplier_terms = ["supplier", "vendor"]
+    spend_terms = ["spend", "amount", "cost", "totalcost", "invoice"]
+    category_terms = ["category", "commodity"]
+    date_terms = ["date", "purchase", "invoice"]
+
+    if any(any(term in col for term in supplier_terms) for col in columns):
+        score += 4
+    if any(any(term in col for term in spend_terms) for col in columns):
+        score += 4
+    if any(any(term in col for term in category_terms) for col in columns):
+        score += 2
+    if any(any(term in col for term in date_terms) for col in columns):
+        score += 1
+
+    score += min(len(df), 1000) / 1000
+
+    return score
+
+
+def load_uploaded_data(uploaded_file):
+    if uploaded_file is None:
+        return None, None
+
+    file_name = uploaded_file.name.lower()
+
+    if file_name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+        return df, "CSV Upload"
+
+    if file_name.endswith((".xlsx", ".xls")):
+        excel_file = pd.ExcelFile(uploaded_file)
+        best_sheet_name = None
+        best_sheet_df = None
+        best_score = -1
+
+        for sheet_name in excel_file.sheet_names:
+            candidate = pd.read_excel(excel_file, sheet_name=sheet_name)
+            score = score_sheet_for_spend_data(candidate)
+
+            if score > best_score:
+                best_score = score
+                best_sheet_name = sheet_name
+                best_sheet_df = candidate
+
+        return best_sheet_df, f"Excel Sheet: {best_sheet_name}"
+
+    raise ValueError("Unsupported file type. Please upload CSV or Excel.")
+
+
+# ============================================================
+# DEMO DATA
+# ============================================================
+
+def build_demo_dataset(demo_type):
+    rows = []
+
+    if demo_type == "Logistics supplier performance":
+        suppliers = [
+            ("DHL Express", "DHL Express", "Logistics", "High", "Active", 1_200_000, 81, 94, 1.2, 1.0, 6),
+            ("D.H.L.", "DHL Express", "Logistics", "High", "Active", 260_000, 83, 93, 1.1, 0.9, 6),
+            ("FedEx Corp", "FedEx", "Logistics", "Medium", "Active", 850_000, 92, 91, 0.8, 0.9, 5),
+            ("UPS", "UPS", "Logistics", "Medium", "Expiring Soon", 740_000, 89, 94, 1.9, 1.2, 7),
+            ("Regional Freight LLC", "Regional Freight", "Logistics", "Low", "No Contract", 160_000, 86, 88, 2.2, 2.0, 9),
+        ]
+    elif demo_type == "IT services supplier performance":
+        suppliers = [
+            ("Microsoft Corp", "Microsoft", "IT Services", "High", "Active", 2_400_000, 98, 98, 0.1, 0.2, 3),
+            ("MSFT", "Microsoft", "IT Services", "High", "Active", 340_000, 97, 97, 0.1, 0.2, 3),
+            ("Amazon Web Services", "Amazon / AWS", "Cloud", "High", "Active", 1_950_000, 96, 96, 0.3, 0.2, 2),
+            ("AWS", "Amazon / AWS", "Cloud", "High", "Active", 540_000, 96, 97, 0.3, 0.2, 2),
+            ("Local IT Support Co", "Local IT Support", "IT Services", "Medium", "Unknown", 420_000, 84, 91, 2.8, 1.4, 8),
+        ]
+    elif demo_type == "MRO supplier performance":
+        suppliers = [
+            ("Critical MRO Supplier", "Critical MRO Supplier", "MRO", "High", "Unknown", 900_000, 82, 91, 3.8, 2.2, 14),
+            ("Grainger", "Grainger", "MRO", "Medium", "Active", 720_000, 95, 94, 0.9, 1.0, 5),
+            ("Fastenal Co", "Fastenal", "MRO", "Medium", "Active", 510_000, 93, 94, 1.1, 1.0, 5),
+            ("Local Bearings LLC", "Local Bearings", "MRO", "Low", "No Contract", 85_000, 88, 89, 2.1, 1.9, 10),
+            ("Industrial Parts Inc", "Industrial Parts", "MRO", "Low", "Expired", 140_000, 86, 90, 2.6, 1.7, 12),
+        ]
+    elif demo_type == "Professional services supplier performance":
+        suppliers = [
+            ("Deloitte Consulting", "Deloitte", "Professional Services", "High", "Active", 1_800_000, 97, 97, 0.0, 0.0, 4),
+            ("Accenture LLP", "Accenture", "Professional Services", "High", "Active", 1_300_000, 94, 96, 0.0, 0.0, 5),
+            ("Local Staffing LLC", "Local Staffing", "Professional Services", "Medium", "Expired", 520_000, 88, 92, 0.4, 0.1, 9),
+            ("Boutique Advisory Co", "Boutique Advisory", "Professional Services", "Low", "Unknown", 180_000, 91, 91, 0.0, 0.0, 6),
+            ("Contractor Services Inc", "Contractor Services", "Professional Services", "Low", "No Contract", 110_000, 87, 89, 0.2, 0.1, 7),
+        ]
+    else:
+        suppliers = [
+            ("DHL Express", "DHL Express", "Logistics", "High", "Active", 1_200_000, 81, 94, 1.2, 1.0, 6),
+            ("Microsoft Corp", "Microsoft", "IT Services", "High", "Active", 2_400_000, 98, 98, 0.1, 0.2, 3),
+            ("Critical MRO Supplier", "Critical MRO Supplier", "MRO", "High", "Unknown", 900_000, 82, 91, 3.8, 2.2, 14),
+            ("Local HVAC Repair Co", "Local HVAC", "Facilities", "Medium", "No Contract", 420_000, 88, 91, 2.0, 1.5, 11),
+            ("Office Depot", "Office Depot", "Office Supplies", "Low", "Active", 310_000, 94, 94, 0.8, 0.8, 5),
+            ("Staples Inc", "Staples", "Office Supplies", "Low", "Active", 260_000, 95, 94, 0.7, 0.8, 5),
+            ("Local Office Supply", "Local Office Supply", "Office Supplies", "Low", "Unknown", 95_000, 90, 91, 1.5, 1.2, 7),
+        ]
+
+    business_units = ["Operations", "Corporate", "Manufacturing", "Field Services", "IT"]
+    regions = ["North America", "South", "West", "Midwest", "East"]
+    buyers = ["S. Patel", "A. Johnson", "M. Chen", "R. Singh", "L. Garcia"]
+
+    transaction_id = 1
+
+    for supplier_name, supplier_family, category, criticality, contract_status, total_spend, otd, prior_otd, defect, prior_defect, lead_time in suppliers:
+        parts = 6
+        for i in range(parts):
+            spend = total_spend / parts
+            rows.append(
+                {
+                    "transaction_id": f"TXN-{transaction_id:05d}",
+                    "supplier_name": supplier_name,
+                    "annual_spend": spend,
+                    "category": category,
+                    "business_unit": business_units[i % len(business_units)],
+                    "region": regions[i % len(regions)],
+                    "country": "United States",
+                    "contract_status": contract_status,
+                    "supplier_criticality": criticality,
+                    "on_time_delivery": otd + (i % 3 - 1),
+                    "prior_year_otd": prior_otd,
+                    "defect_rate": defect,
+                    "prior_year_defect_rate": prior_defect,
+                    "lead_time_days": lead_time + (i % 2),
+                    "invoice_count": 5 + i,
+                    "po_count": 2 + i,
+                    "buyer": buyers[i % len(buyers)],
+                    "payment_terms": "Net 60" if i % 2 == 0 else "Net 45",
+                    "invoice_date": pd.Timestamp("2026-01-01") + pd.DateOffset(months=i),
+                    "description": f"{category} services from {supplier_family}",
+                }
+            )
+            transaction_id += 1
+
+    return pd.DataFrame(rows)
+
+
+# ============================================================
+# SUPPLIER FUZZY NORMALIZATION
+# ============================================================
+
+KNOWN_SUPPLIER_ALIASES = {
+    "ibm": "IBM",
+    "i b m": "IBM",
+    "international business machines": "IBM",
+    "international business machines corporation": "IBM",
+    "aws": "Amazon / AWS",
+    "amazon web services": "Amazon / AWS",
+    "amazon": "Amazon / AWS",
+    "microsoft": "Microsoft",
+    "microsoft corp": "Microsoft",
+    "microsoft corporation": "Microsoft",
+    "msft": "Microsoft",
+    "microsoft azure": "Microsoft",
+    "google": "Google",
+    "google cloud": "Google",
+    "alphabet": "Google",
+    "dhl": "DHL",
+    "dhl express": "DHL",
+    "dhl global forwarding": "DHL",
+    "fedex": "FedEx",
+    "fedex corp": "FedEx",
+    "federal express": "FedEx",
+    "ups": "UPS",
+    "united parcel service": "UPS",
+    "oracle": "Oracle",
+    "sap": "SAP",
+    "grainger": "Grainger",
+    "fastenal": "Fastenal",
+    "staples": "Staples",
+    "staples inc": "Staples",
+    "office depot": "Office Depot",
+}
+
+COMMON_SUFFIXES = [
+    "inc", "incorporated", "llc", "ltd", "limited", "corp", "corporation",
+    "co", "company", "plc", "lp", "llp", "gmbh", "services", "service",
+    "group", "holdings",
+]
+
+
+def clean_supplier_name(name):
+    if pd.isna(name):
+        return ""
+
+    cleaned = str(name).lower().strip()
+    cleaned = re.sub(r"[^a-z0-9\s]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    words = [word for word in cleaned.split() if word not in COMMON_SUFFIXES]
+    return " ".join(words).strip()
+
+
+def alias_lookup(name):
+    cleaned = clean_supplier_name(name)
+    return KNOWN_SUPPLIER_ALIASES.get(cleaned)
+
+
+def choose_canonical_supplier(original_names, spend_by_supplier):
+    valid = [str(name).strip() for name in original_names if str(name).strip()]
+
+    if not valid:
+        return "Unknown Supplier"
+
+    sorted_by_spend = sorted(
+        valid,
+        key=lambda supplier: spend_by_supplier.get(supplier, 0),
+        reverse=True,
     )
 
+    return sorted_by_spend[0]
 
-def make_display_table(data: pd.DataFrame) -> pd.DataFrame:
-    display_data = data.copy()
-    display_data.columns = [
-        prettify_column_name(column)
-        for column in display_data.columns
+
+def apply_supplier_normalization(df, threshold=90):
+    if df.empty or "supplier_name" not in df.columns:
+        df["original_supplier_name"] = "Unknown Supplier"
+        df["normalized_supplier_name"] = "Unknown Supplier"
+        return df, pd.DataFrame()
+
+    data = df.copy()
+    data["original_supplier_name"] = data["supplier_name"].fillna("Unknown Supplier").astype(str)
+
+    spend_by_supplier = (
+        data.groupby("original_supplier_name")["annual_spend"]
+        .sum()
+        .to_dict()
+    )
+
+    original_suppliers = sorted(data["original_supplier_name"].unique())
+
+    mapping = {}
+    match_scores = {}
+    match_methods = {}
+
+    unresolved = []
+
+    for supplier in original_suppliers:
+        alias = alias_lookup(supplier)
+        if alias:
+            mapping[supplier] = alias
+            match_scores[supplier] = 100
+            match_methods[supplier] = "Known alias"
+        else:
+            unresolved.append(supplier)
+
+    cleaned_to_originals = defaultdict(list)
+
+    for supplier in unresolved:
+        cleaned = clean_supplier_name(supplier)
+        if cleaned:
+            cleaned_to_originals[cleaned].append(supplier)
+        else:
+            mapping[supplier] = "Unknown Supplier"
+            match_scores[supplier] = 0
+            match_methods[supplier] = "Missing supplier name"
+
+    cleaned_names = list(cleaned_to_originals.keys())
+    assigned = set()
+
+    for cleaned in cleaned_names:
+        if cleaned in assigned:
+            continue
+
+        matches = process.extract(
+            cleaned,
+            cleaned_names,
+            scorer=fuzz.token_sort_ratio,
+            score_cutoff=threshold,
+            limit=None,
+        )
+
+        matched_cleaned_names = [match[0] for match in matches]
+        matched_scores = [match[1] for match in matches]
+
+        for match_name in matched_cleaned_names:
+            assigned.add(match_name)
+
+        original_group = []
+        for match_name in matched_cleaned_names:
+            original_group.extend(cleaned_to_originals[match_name])
+
+        canonical = choose_canonical_supplier(original_group, spend_by_supplier)
+        average_score = round(sum(matched_scores) / len(matched_scores), 1) if matched_scores else 0
+
+        for supplier in original_group:
+            mapping[supplier] = canonical
+            match_scores[supplier] = average_score
+            match_methods[supplier] = "Fuzzy match" if len(original_group) > 1 else "No close match"
+
+    data["normalized_supplier_name"] = data["original_supplier_name"].map(mapping).fillna(data["original_supplier_name"])
+
+    rows = []
+
+    for family, family_df in data.groupby("normalized_supplier_name", dropna=False):
+        variants = sorted(family_df["original_supplier_name"].dropna().astype(str).unique())
+        scores = [match_scores.get(variant, 0) for variant in variants]
+        methods = sorted(set(match_methods.get(variant, "Unknown") for variant in variants))
+
+        rows.append(
+            {
+                "normalized_supplier_name": family,
+                "original_supplier_variants": ", ".join(variants),
+                "variant_count": len(variants),
+                "total_spend": family_df["annual_spend"].sum(),
+                "average_match_score": round(sum(scores) / len(scores), 1) if scores else 0,
+                "match_method": ", ".join(methods),
+            }
+        )
+
+    summary = pd.DataFrame(rows)
+
+    if not summary.empty:
+        summary = summary.sort_values(["total_spend", "variant_count"], ascending=[False, False])
+
+    return data, summary
+
+
+# ============================================================
+# SUPPLIER DIAGNOSTIC ENGINE
+# ============================================================
+
+def first_available_column(df, columns):
+    for col in columns:
+        if col in df.columns:
+            return col
+    return None
+
+
+def safe_mode(series, default="Not available"):
+    valid = series.dropna().astype(str)
+    if valid.empty:
+        return default
+    return valid.mode().iloc[0]
+
+
+def calculate_supplier_summary(results):
+    if results.empty:
+        return pd.DataFrame()
+
+    supplier_col = "normalized_supplier_name" if "normalized_supplier_name" in results.columns else "supplier_name"
+
+    group_cols = [supplier_col]
+
+    aggregation = {
+        "annual_spend": "sum",
+        "supplier_name": pd.Series.nunique,
+    }
+
+    optional_mean_cols = [
+        "on_time_delivery",
+        "prior_year_otd",
+        "defect_rate",
+        "prior_year_defect_rate",
+        "lead_time_days",
+        "invoice_count",
+        "po_count",
     ]
-    return display_data
 
-def prepare_opportunity_display_table(opportunities: pd.DataFrame) -> pd.DataFrame:
-    display_data = opportunities.copy()
-    display_data = display_data.loc[:, ~display_data.columns.duplicated()]
+    for col in optional_mean_cols:
+        if col in results.columns:
+            aggregation[col] = "mean"
 
-    currency_columns = [
-        "total_spend",
-        "estimated_savings_low",
-        "estimated_savings_high",
+    supplier_summary = (
+        results.groupby(group_cols, dropna=False)
+        .agg(aggregation)
+        .reset_index()
+        .rename(
+            columns={
+                supplier_col: "supplier",
+                "supplier_name": "original_supplier_count",
+            }
+        )
+    )
+
+    for col in ["category", "business_unit", "region", "country", "contract_status", "supplier_criticality", "buyer", "payment_terms"]:
+        if col in results.columns:
+            values = results.groupby(supplier_col)[col].agg(lambda x: safe_mode(x)).reset_index()
+            values = values.rename(columns={supplier_col: "supplier"})
+            supplier_summary = supplier_summary.merge(values, on="supplier", how="left")
+
+    return supplier_summary
+
+
+def classify_contract_risk(status, spend=0, high_spend_threshold=0):
+    status_text = str(status).strip().lower()
+
+    if status_text in ["active", "active contract", "contracted"]:
+        return "Low"
+
+    if status_text in ["expiring soon", "expiring", "renewal due"]:
+        return "Medium"
+
+    if status_text in ["expired", "no contract", "none", "missing", "not contracted"]:
+        return "High"
+
+    if status_text in ["unknown", "not available", "n/a", "na", ""]:
+        return "High" if spend >= high_spend_threshold and spend > 0 else "Medium"
+
+    return "Medium"
+
+
+def get_performance_flags(row):
+    flags = []
+
+    otd = row.get("on_time_delivery")
+    prior_otd = row.get("prior_year_otd")
+    defect = row.get("defect_rate")
+    prior_defect = row.get("prior_year_defect_rate")
+    lead_time = row.get("lead_time_days")
+
+    if pd.notna(otd) and pd.notna(prior_otd):
+        decline = float(prior_otd) - float(otd)
+        if decline > 5:
+            flags.append(
+                {
+                    "metric": "On-time delivery",
+                    "current_value": format_percent(otd),
+                    "prior_value": format_percent(prior_otd),
+                    "change": f"-{decline:.1f} pts",
+                    "threshold": "Decline greater than 5 pts",
+                    "business_implication": "Potential service reliability issue requiring supplier review.",
+                }
+            )
+
+    if pd.notna(defect) and pd.notna(prior_defect):
+        increase = float(defect) - float(prior_defect)
+        if increase > 1:
+            flags.append(
+                {
+                    "metric": "Defect rate",
+                    "current_value": format_percent(defect),
+                    "prior_value": format_percent(prior_defect),
+                    "change": f"+{increase:.1f} pts",
+                    "threshold": "Increase greater than 1 pt",
+                    "business_implication": "Potential quality deterioration requiring root-cause review.",
+                }
+            )
+
+    if pd.notna(otd) and float(otd) < 90:
+        flags.append(
+            {
+                "metric": "On-time delivery",
+                "current_value": format_percent(otd),
+                "prior_value": "Not required",
+                "change": "Below threshold",
+                "threshold": "Below 90%",
+                "business_implication": "Supplier may be underperforming on delivery reliability.",
+            }
+        )
+
+    if pd.notna(defect) and float(defect) > 3:
+        flags.append(
+            {
+                "metric": "Defect rate",
+                "current_value": format_percent(defect),
+                "prior_value": "Not required",
+                "change": "Above threshold",
+                "threshold": "Above 3%",
+                "business_implication": "Supplier may require corrective quality action.",
+            }
+        )
+
+    if pd.notna(lead_time) and float(lead_time) > 10:
+        flags.append(
+            {
+                "metric": "Lead time",
+                "current_value": f"{float(lead_time):.1f} days",
+                "prior_value": "Not required",
+                "change": "Above threshold",
+                "threshold": "Above 10 days",
+                "business_implication": "Long lead time may create continuity or planning risk.",
+            }
+        )
+
+    return flags
+
+
+def assign_supplier_archetypes(supplier_summary):
+    if supplier_summary.empty:
+        return supplier_summary
+
+    data = supplier_summary.copy()
+
+    high_spend_threshold = data["annual_spend"].quantile(0.75) if len(data) > 1 else data["annual_spend"].max()
+    medium_spend_threshold = data["annual_spend"].quantile(0.50) if len(data) > 1 else data["annual_spend"].median()
+
+    archetypes = []
+    actions = []
+    why_flags = []
+    priorities = []
+    contract_risks = []
+    risk_flags = []
+
+    for _, row in data.iterrows():
+        spend = float(row.get("annual_spend", 0))
+        criticality = str(row.get("supplier_criticality", "Unknown")).strip().lower()
+        contract_status = row.get("contract_status", "Unknown")
+
+        is_high_spend = spend >= high_spend_threshold and spend > 0
+        is_medium_spend = spend >= medium_spend_threshold and spend > 0
+        is_low_spend = spend < medium_spend_threshold
+        is_high_criticality = criticality in ["high", "critical", "business critical", "strategic"]
+        is_medium_criticality = criticality in ["medium", "moderate"]
+
+        contract_risk = classify_contract_risk(contract_status, spend, high_spend_threshold)
+        flags = get_performance_flags(row)
+
+        poor_performance = len(flags) > 0
+        strong_performance = True
+
+        if pd.notna(row.get("on_time_delivery")) and float(row.get("on_time_delivery")) < 95:
+            strong_performance = False
+        if pd.notna(row.get("defect_rate")) and float(row.get("defect_rate")) > 1:
+            strong_performance = False
+
+        reasons = []
+
+        if is_high_spend:
+            reasons.append(f"high spend supplier at {format_currency(spend)}")
+        elif is_medium_spend:
+            reasons.append(f"moderate spend supplier at {format_currency(spend)}")
+        else:
+            reasons.append(f"lower spend supplier at {format_currency(spend)}")
+
+        if is_high_criticality:
+            reasons.append("supplier criticality is High")
+        elif is_medium_criticality:
+            reasons.append("supplier criticality is Medium")
+
+        if contract_risk in ["High", "Medium"]:
+            reasons.append(f"contract risk is {contract_risk}")
+
+        for flag in flags[:2]:
+            reasons.append(f"{flag['metric']} issue: {flag['change']}")
+
+        if is_high_criticality and poor_performance:
+            archetype = "Alternate Source Required"
+            action = "Identify backup suppliers and reduce dependency risk."
+            priority = "High"
+            risk_flag = True
+
+        elif (is_high_spend or is_high_criticality) and poor_performance:
+            archetype = "Executive Escalation"
+            action = "Escalate in QBR, require corrective action plan, and assess commercial remedies."
+            priority = "High"
+            risk_flag = True
+
+        elif (is_high_spend or is_medium_spend) and contract_risk == "High":
+            archetype = "Contract Review Priority"
+            action = "Validate contract coverage, renewal timing, and commercial protection."
+            priority = "High" if is_high_spend else "Medium"
+            risk_flag = True
+
+        elif is_high_spend and strong_performance and contract_risk == "Low" and (is_high_criticality or is_medium_criticality):
+            archetype = "Strategic Partner"
+            action = "Maintain relationship, deepen collaboration, and review value-add opportunities."
+            priority = "Medium"
+            risk_flag = False
+
+        elif poor_performance:
+            archetype = "Watchlist Supplier"
+            action = "Monitor closely, request improvement plan, and review again in 30–60 days."
+            priority = "Medium"
+            risk_flag = True
+
+        elif is_low_spend and contract_risk in ["High", "Medium"]:
+            archetype = "Rationalization Candidate"
+            action = "Consider consolidation, replacement, or migration to a preferred supplier."
+            priority = "Medium"
+            risk_flag = True
+
+        else:
+            archetype = "Maintain / Monitor"
+            action = "Continue monitoring through standard supplier management process."
+            priority = "Low"
+            risk_flag = False
+
+        archetypes.append(archetype)
+        actions.append(action)
+        priorities.append(priority)
+        contract_risks.append(contract_risk)
+        risk_flags.append(risk_flag)
+        why_flags.append("Flagged because " + ", ".join(reasons) + ".")
+
+    data["action_archetype"] = archetypes
+    data["recommended_action"] = actions
+    data["priority"] = priorities
+    data["contract_risk"] = contract_risks
+    data["is_spend_at_risk"] = risk_flags
+    data["why_flagged"] = why_flags
+
+    return data
+
+
+def calculate_spend_at_risk(supplier_diagnostics):
+    if supplier_diagnostics.empty:
+        return {}
+
+    total_spend = supplier_diagnostics["annual_spend"].sum()
+
+    risk_archetypes = [
+        "Executive Escalation",
+        "Watchlist Supplier",
+        "Contract Review Priority",
+        "Rationalization Candidate",
+        "Alternate Source Required",
     ]
 
-    for column in currency_columns:
-        if column in display_data.columns:
-            display_data[column] = display_data[column].apply(format_currency)
+    spend_at_risk = supplier_diagnostics[
+        supplier_diagnostics["action_archetype"].isin(risk_archetypes)
+    ]["annual_spend"].sum()
 
-    if "estimated_savings_range" in display_data.columns:
-        display_data["estimated_savings_range"] = display_data[
-            "estimated_savings_range"
-        ].astype(str)
+    high_criticality_spend = supplier_diagnostics[
+        supplier_diagnostics.get("supplier_criticality", "").astype(str).str.lower().isin(
+            ["high", "critical", "business critical", "strategic"]
+        )
+    ]["annual_spend"].sum() if "supplier_criticality" in supplier_diagnostics.columns else 0
 
-    return make_display_table(display_data)
+    contract_gap_spend = supplier_diagnostics[
+        supplier_diagnostics["contract_risk"].isin(["High", "Medium"])
+    ]["annual_spend"].sum() if "contract_risk" in supplier_diagnostics.columns else 0
 
-def render_recommendation_card(
-    recommendation: dict,
-    index: int,
-):
+    declining_spend = 0
+
+    for _, row in supplier_diagnostics.iterrows():
+        if len(get_performance_flags(row)) > 0:
+            declining_spend += float(row.get("annual_spend", 0))
+
+    return {
+        "total_spend": total_spend,
+        "spend_at_risk": spend_at_risk,
+        "spend_at_risk_pct": (spend_at_risk / total_spend * 100) if total_spend > 0 else 0,
+        "high_criticality_spend": high_criticality_spend,
+        "contract_gap_spend": contract_gap_spend,
+        "declining_performance_spend": declining_spend,
+    }
+
+
+# ============================================================
+# OPPORTUNITY AND PIPELINE ENGINE
+# ============================================================
+
+def estimate_savings_range(opportunity_type, spend, supplier_count=0):
+    if opportunity_type == "Fragmented category":
+        if supplier_count >= 8:
+            low, high = 0.07, 0.12
+        elif supplier_count >= 5:
+            low, high = 0.05, 0.09
+        else:
+            low, high = 0.03, 0.06
+    elif opportunity_type == "Tail spend cleanup":
+        low, high = 0.03, 0.08
+    elif opportunity_type == "Contract coverage review":
+        low, high = 0.04, 0.10
+    else:
+        low, high = 0.02, 0.05
+
+    return spend * low, spend * high
+
+
+def create_sourcing_opportunities(results, supplier_diagnostics):
+    opportunities = []
+
+    if results.empty:
+        return pd.DataFrame()
+
+    category_summary = (
+        results.groupby("category", dropna=False)
+        .agg(
+            category_spend=("annual_spend", "sum"),
+            supplier_count=("normalized_supplier_name", "nunique")
+            if "normalized_supplier_name" in results.columns
+            else ("supplier_name", "nunique"),
+        )
+        .reset_index()
+    )
+
+    for _, row in category_summary.iterrows():
+        category = row["category"]
+        spend = float(row["category_spend"])
+        supplier_count = int(row["supplier_count"])
+
+        if supplier_count >= 5:
+            low, high = estimate_savings_range("Fragmented category", spend, supplier_count)
+            opportunities.append(
+                {
+                    "opportunity_type": "Fragmented category",
+                    "category": category,
+                    "opportunity_action": f"Supplier consolidation review for {category}",
+                    "value_low": low,
+                    "value_high": high,
+                    "value_display": f"{format_currency(low)} - {format_currency(high)}",
+                    "priority": "High" if spend >= category_summary["category_spend"].quantile(0.75) else "Medium",
+                    "confidence": "Medium",
+                    "complexity": "Medium",
+                    "why_flagged": f"Category has {supplier_count} suppliers and {format_currency(spend)} in spend, indicating possible fragmentation.",
+                }
+            )
+
+    supplier_spend = (
+        results.groupby("normalized_supplier_name" if "normalized_supplier_name" in results.columns else "supplier_name")
+        .agg(spend=("annual_spend", "sum"))
+        .reset_index()
+    )
+
+    if not supplier_spend.empty:
+        tail_threshold = supplier_spend["spend"].quantile(0.25)
+        tail_suppliers = supplier_spend[supplier_spend["spend"] <= tail_threshold]
+
+        if len(tail_suppliers) >= 5:
+            tail_spend = tail_suppliers["spend"].sum()
+            low, high = estimate_savings_range("Tail spend cleanup", tail_spend)
+            opportunities.append(
+                {
+                    "opportunity_type": "Tail spend cleanup",
+                    "category": "Cross-category tail spend",
+                    "opportunity_action": "Tail spend cleanup for low-spend suppliers",
+                    "value_low": low,
+                    "value_high": high,
+                    "value_display": f"{format_currency(low)} - {format_currency(high)}",
+                    "priority": "Medium",
+                    "confidence": "Medium",
+                    "complexity": "Low",
+                    "why_flagged": f"{len(tail_suppliers)} suppliers sit in the low-spend segment, representing {format_currency(tail_spend)} in spend.",
+                }
+            )
+
+    if not supplier_diagnostics.empty and "contract_risk" in supplier_diagnostics.columns:
+        contract_gap = supplier_diagnostics[supplier_diagnostics["contract_risk"].isin(["High", "Medium"])]
+
+        if not contract_gap.empty:
+            contract_gap_by_category = (
+                contract_gap.groupby("category", dropna=False)["annual_spend"]
+                .sum()
+                .reset_index()
+                .sort_values("annual_spend", ascending=False)
+                .head(5)
+            )
+
+            for _, row in contract_gap_by_category.iterrows():
+                spend = float(row["annual_spend"])
+                low, high = estimate_savings_range("Contract coverage review", spend)
+                opportunities.append(
+                    {
+                        "opportunity_type": "Contract coverage review",
+                        "category": row["category"],
+                        "opportunity_action": f"Contract coverage review for {row['category']}",
+                        "value_low": low,
+                        "value_high": high,
+                        "value_display": f"{format_currency(low)} - {format_currency(high)}",
+                        "priority": "High",
+                        "confidence": "Medium",
+                        "complexity": "Low",
+                        "why_flagged": f"{format_currency(spend)} in spend has High or Medium contract coverage risk.",
+                    }
+                )
+
+    return pd.DataFrame(opportunities)
+
+
+def create_action_pipeline(results, supplier_diagnostics, opportunities):
+    rows = []
+
+    if supplier_diagnostics is not None and not supplier_diagnostics.empty:
+        action_archetypes_for_pipeline = [
+            "Executive Escalation",
+            "Watchlist Supplier",
+            "Contract Review Priority",
+            "Rationalization Candidate",
+            "Alternate Source Required",
+        ]
+
+        pipeline_suppliers = supplier_diagnostics[
+            supplier_diagnostics["action_archetype"].isin(action_archetypes_for_pipeline)
+        ].copy()
+
+        for _, row in pipeline_suppliers.iterrows():
+            supplier = row.get("supplier", "Unknown Supplier")
+            archetype = row.get("action_archetype", "Supplier review")
+            spend = float(row.get("annual_spend", 0))
+
+            if archetype == "Executive Escalation":
+                action = f"Corrective action plan for {supplier}"
+                owner = "Category Manager / Supplier Relationship Lead"
+                next_step = "Prepare QBR escalation package and request corrective action plan."
+                validation = "Confirm SLA language, delivery/quality root cause, and business impact."
+                complexity = "Medium"
+
+            elif archetype == "Alternate Source Required":
+                action = f"Alternate source assessment for {supplier}"
+                owner = "Category Manager"
+                next_step = "Identify backup suppliers and qualification requirements."
+                validation = "Confirm supplier criticality, switching constraints, and operational dependency."
+                complexity = "High"
+
+            elif archetype == "Contract Review Priority":
+                action = f"Contract coverage review for {supplier}"
+                owner = "Sourcing / Contracts Lead"
+                next_step = "Validate contract status, renewal timing, pricing terms, and commercial protections."
+                validation = "Confirm whether spend is unmanaged or contract metadata is incomplete."
+                complexity = "Low"
+
+            elif archetype == "Rationalization Candidate":
+                action = f"Supplier rationalization review for {supplier}"
+                owner = "Procurement Ops"
+                next_step = "Assess whether spend can migrate to preferred suppliers or buying channels."
+                validation = "Confirm supplier is non-strategic and substitutable."
+                complexity = "Low"
+
+            else:
+                action = f"Watchlist review for {supplier}"
+                owner = "Supplier Manager"
+                next_step = "Monitor performance and request an improvement plan if trend continues."
+                validation = "Confirm whether issues are recurring, isolated, or caused by internal demand."
+                complexity = "Low"
+
+            rows.append(
+                {
+                    "opportunity_action": action,
+                    "supplier_or_category": supplier,
+                    "category": row.get("category", "Unclassified"),
+                    "action_archetype": archetype,
+                    "value_exposure": spend,
+                    "value_exposure_display": format_currency(spend),
+                    "priority": row.get("priority", "Medium"),
+                    "confidence": "High" if archetype in ["Executive Escalation", "Alternate Source Required"] else "Medium",
+                    "complexity": complexity,
+                    "recommended_owner": owner,
+                    "next_step": next_step,
+                    "validation_required": validation,
+                    "status": "New",
+                    "why_flagged": row.get("why_flagged", "Rule-based diagnostic flag."),
+                }
+            )
+
+    if opportunities is not None and not opportunities.empty:
+        for _, row in opportunities.iterrows():
+            rows.append(
+                {
+                    "opportunity_action": row.get("opportunity_action", "Sourcing opportunity review"),
+                    "supplier_or_category": row.get("category", "Unclassified"),
+                    "category": row.get("category", "Unclassified"),
+                    "action_archetype": row.get("opportunity_type", "Sourcing opportunity"),
+                    "value_exposure": float(row.get("value_high", 0)),
+                    "value_exposure_display": row.get("value_display", "Not estimated"),
+                    "priority": row.get("priority", "Medium"),
+                    "confidence": row.get("confidence", "Medium"),
+                    "complexity": row.get("complexity", "Medium"),
+                    "recommended_owner": "Procurement Ops / Category Manager",
+                    "next_step": "Validate sourcing feasibility and confirm business case.",
+                    "validation_required": "Confirm supplier substitutability, demand requirements, and category owner alignment.",
+                    "status": "New",
+                    "why_flagged": row.get("why_flagged", "Rule-based sourcing opportunity."),
+                }
+            )
+
+    pipeline = pd.DataFrame(rows)
+
+    if pipeline.empty:
+        return pipeline
+
+    priority_order = {"High": 1, "Medium": 2, "Low": 3}
+    pipeline["priority_sort"] = pipeline["priority"].map(priority_order).fillna(99)
+
+    pipeline = pipeline.sort_values(
+        ["priority_sort", "value_exposure"],
+        ascending=[True, False],
+    ).drop(columns=["priority_sort"])
+
+    return pipeline.reset_index(drop=True)
+
+
+# ============================================================
+# DATA READINESS
+# ============================================================
+
+def calculate_data_readiness(results, supplier_normalization_summary, original_columns):
+    required_fields = ["supplier_name", "annual_spend", "category"]
+    performance_fields = ["on_time_delivery", "prior_year_otd", "defect_rate", "prior_year_defect_rate"]
+    contract_fields = ["contract_status"]
+    context_fields = ["supplier_criticality", "business_unit", "region", "buyer", "invoice_date"]
+
+    dimensions = []
+
+    def completeness_score(column):
+        if column not in results.columns:
+            return 0
+        return results[column].notna().mean() * 100
+
+    supplier_score = completeness_score("supplier_name")
+    spend_score = 100 if "annual_spend" in results.columns and results["annual_spend"].sum() > 0 else 0
+    category_score = completeness_score("category")
+
+    performance_available = [col for col in performance_fields if col in results.columns]
+    performance_score = (
+        sum(completeness_score(col) for col in performance_available) / len(performance_available)
+        if performance_available
+        else 0
+    )
+
+    contract_score = completeness_score("contract_status") if "contract_status" in results.columns else 0
+
+    date_score = completeness_score("invoice_date") if "invoice_date" in results.columns else 0
+
+    duplicate_family_count = 0
+    if supplier_normalization_summary is not None and not supplier_normalization_summary.empty:
+        duplicate_family_count = int((supplier_normalization_summary["variant_count"] > 1).sum())
+
+    duplicate_score = 100
+    if duplicate_family_count > 0:
+        duplicate_score = max(70, 100 - duplicate_family_count * 3)
+
+    dimensions.append(("Supplier name completeness", supplier_score))
+    dimensions.append(("Spend field usability", spend_score))
+    dimensions.append(("Category completeness", category_score))
+    dimensions.append(("Performance metric completeness", performance_score))
+    dimensions.append(("Contract status completeness", contract_score))
+    dimensions.append(("Date validity", date_score))
+    dimensions.append(("Duplicate supplier risk", duplicate_score))
+
+    overall_score = round(sum(score for _, score in dimensions) / len(dimensions), 1)
+
+    missing_columns = [
+        col for col in required_fields + performance_fields + contract_fields + context_fields
+        if col not in results.columns
+    ]
+
+    limitations = []
+
+    if "contract_status" not in results.columns:
+        limitations.append("Contract coverage risk is limited because contract_status is missing.")
+    if not performance_available:
+        limitations.append("Supplier performance deterioration analysis is limited because OTD/defect fields are missing.")
+    if "supplier_criticality" not in results.columns:
+        limitations.append("Critical supplier exposure is limited because supplier_criticality is missing.")
+    if duplicate_family_count > 0:
+        limitations.append(f"{duplicate_family_count} potential duplicate supplier families require business review.")
+
+    if not limitations:
+        limitations.append("No major data limitations detected for the current diagnostic scope.")
+
+    cleanup_actions = [
+        "Validate supplier family normalization before consolidation decisions.",
+        "Confirm missing or unknown contract status with sourcing and legal teams.",
+        "Review supplier criticality values with category owners.",
+        "Confirm performance deterioration with operational stakeholders before supplier escalation.",
+    ]
+
+    return {
+        "overall_score": overall_score,
+        "dimensions": dimensions,
+        "missing_columns": missing_columns,
+        "limitations": limitations,
+        "cleanup_actions": cleanup_actions,
+        "duplicate_family_count": duplicate_family_count,
+    }
+
+
+# ============================================================
+# CHARTS
+# ============================================================
+
+def chart_spend_by_category(results):
+    if results.empty:
+        return None
+
+    data = (
+        results.groupby("category", dropna=False)["annual_spend"]
+        .sum()
+        .reset_index()
+        .sort_values("annual_spend", ascending=True)
+        .tail(10)
+    )
+
+    fig = px.bar(
+        data,
+        x="annual_spend",
+        y="category",
+        orientation="h",
+        title="Top Categories by Spend",
+        labels={"annual_spend": "Spend", "category": "Category"},
+    )
+    return apply_chart_layout(fig)
+
+
+def chart_top_suppliers(results):
+    supplier_col = "normalized_supplier_name" if "normalized_supplier_name" in results.columns else "supplier_name"
+
+    data = (
+        results.groupby(supplier_col, dropna=False)["annual_spend"]
+        .sum()
+        .reset_index()
+        .sort_values("annual_spend", ascending=True)
+        .tail(10)
+    )
+
+    fig = px.bar(
+        data,
+        x="annual_spend",
+        y=supplier_col,
+        orientation="h",
+        title="Top Supplier Families by Spend",
+        labels={"annual_spend": "Spend", supplier_col: "Supplier"},
+    )
+    return apply_chart_layout(fig)
+
+
+def chart_monthly_spend(results):
+    if "invoice_date" not in results.columns:
+        return None
+
+    data = results.dropna(subset=["invoice_date"]).copy()
+
+    if data.empty:
+        return None
+
+    data["month"] = data["invoice_date"].dt.to_period("M").astype(str)
+
+    trend = (
+        data.groupby("month")["annual_spend"]
+        .sum()
+        .reset_index()
+        .sort_values("month")
+    )
+
+    fig = px.line(
+        trend,
+        x="month",
+        y="annual_spend",
+        markers=True,
+        title="Monthly Spend Trend",
+        labels={"month": "Month", "annual_spend": "Spend"},
+    )
+    return apply_chart_layout(fig)
+
+
+def chart_archetype_distribution(supplier_diagnostics):
+    if supplier_diagnostics.empty or "action_archetype" not in supplier_diagnostics.columns:
+        return None
+
+    data = (
+        supplier_diagnostics.groupby("action_archetype")
+        .agg(spend=("annual_spend", "sum"), supplier_count=("supplier", "count"))
+        .reset_index()
+        .sort_values("spend", ascending=True)
+    )
+
+    fig = px.bar(
+        data,
+        x="spend",
+        y="action_archetype",
+        orientation="h",
+        title="Supplier Spend by Action Archetype",
+        labels={"spend": "Spend", "action_archetype": "Action Archetype"},
+        hover_data=["supplier_count"],
+    )
+    return apply_chart_layout(fig)
+
+
+def chart_contract_risk(supplier_diagnostics):
+    if supplier_diagnostics.empty or "contract_risk" not in supplier_diagnostics.columns:
+        return None
+
+    data = (
+        supplier_diagnostics.groupby("contract_risk")["annual_spend"]
+        .sum()
+        .reset_index()
+    )
+
+    fig = px.bar(
+        data,
+        x="contract_risk",
+        y="annual_spend",
+        title="Spend by Contract Coverage Risk",
+        labels={"contract_risk": "Contract Risk", "annual_spend": "Spend"},
+    )
+    return apply_chart_layout(fig)
+
+
+def chart_spend_at_risk_top_suppliers(supplier_diagnostics):
+    if supplier_diagnostics.empty:
+        return None
+
+    data = supplier_diagnostics[supplier_diagnostics["is_spend_at_risk"]].copy()
+
+    if data.empty:
+        return None
+
+    data = data.sort_values("annual_spend", ascending=True).tail(10)
+
+    fig = px.bar(
+        data,
+        x="annual_spend",
+        y="supplier",
+        color="action_archetype",
+        orientation="h",
+        title="Top Suppliers Contributing to Spend at Risk",
+        labels={"annual_spend": "Spend at Risk", "supplier": "Supplier", "action_archetype": "Archetype"},
+    )
+    return apply_chart_layout(fig)
+
+
+# ============================================================
+# RENDER TABS
+# ============================================================
+
+def render_executive_diagnostic(results, supplier_diagnostics, spend_risk, pipeline, data_readiness):
+    st.subheader("Executive Diagnostic")
+
+    metric_cols = st.columns(6)
+
+    total_spend = spend_risk.get("total_spend", 0)
+    spend_at_risk = spend_risk.get("spend_at_risk", 0)
+    spend_at_risk_pct = spend_risk.get("spend_at_risk_pct", 0)
+    contract_gap_spend = spend_risk.get("contract_gap_spend", 0)
+    high_priority_actions = int((pipeline["priority"] == "High").sum()) if not pipeline.empty else 0
+    supplier_count = supplier_diagnostics["supplier"].nunique() if not supplier_diagnostics.empty else 0
+
+    metric_cols[0].metric("Total Spend", format_currency(total_spend))
+    metric_cols[1].metric("Suppliers", format_number(supplier_count))
+    metric_cols[2].metric("Spend at Risk", f"{format_currency(spend_at_risk)}")
+    metric_cols[3].metric("% at Risk", format_percent(spend_at_risk_pct))
+    metric_cols[4].metric("Contract Gap", format_currency(contract_gap_spend))
+    metric_cols[5].metric("High Priority Actions", format_number(high_priority_actions))
+
+    duplicate_count = data_readiness.get("duplicate_family_count", 0)
+
     st.markdown(
         f"""
-        <div class="section-card">
-            <h4>{index}. {recommendation["initiative"]}</h4>
-            <p><strong>Recommendation:</strong> {recommendation["recommendation"]}</p>
-            <p><strong>Rationale:</strong> {recommendation["rationale"]}</p>
-            <p><strong>Procurement action:</strong> {recommendation["procurement_action"]}</p>
-            <p>
-                <strong>Impact:</strong> {recommendation["estimated_savings_range"]} potential savings &nbsp; | &nbsp;
-                <strong>{recommendation["priority"]}</strong> priority &nbsp; | &nbsp;
-                {recommendation["difficulty"]} difficulty
-            </p>
+        <div class="callout-card">
+            <strong>Diagnostic view:</strong> The tool analyzed {format_currency(total_spend)} across 
+            {format_number(supplier_count)} supplier families. It identified {format_currency(spend_at_risk)} 
+            of spend requiring procurement action, equal to {format_percent(spend_at_risk_pct)} of analyzed spend.
+            The current action pipeline contains {len(pipeline)} recommended management actions, including 
+            {high_priority_actions} high-priority items.
+            <br><br>
+            <strong>Supplier normalization:</strong> {duplicate_count} potential duplicate supplier-family patterns 
+            were detected using alias rules and fuzzy matching. These matches are used to improve the diagnostic but 
+            should be reviewed before final consolidation decisions.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    categories = recommendation.get("categories", [])
+    if not pipeline.empty:
+        st.markdown("### Immediate Leadership Focus")
+        top_actions = pipeline.head(5)
 
-    if categories:
-        category_table = pd.DataFrame(categories)
+        for idx, row in top_actions.iterrows():
+            st.markdown(
+                f"""
+                <div class="section-card">
+                    <h4>{idx + 1}. {row.get("opportunity_action")}</h4>
+                    <p><strong>Value / Exposure:</strong> {row.get("value_exposure_display")} |
+                    <strong>Priority:</strong> {row.get("priority")} |
+                    <strong>Owner:</strong> {row.get("recommended_owner")}</p>
+                    <p><strong>Next step:</strong> {row.get("next_step")}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        display_columns = [
-            "category",
-            "current_suppliers",
-            "target_suppliers",
-            "estimated_savings_range",
-            "priority",
+
+def render_spend_analytics(results):
+    st.subheader("Spend Analytics: Evidence Base")
+
+    st.markdown(
+        """
+        This section provides the spend concentration and category-level evidence used to support the
+        diagnostic findings, spend-at-risk calculations, and action pipeline.
+        """
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        show_chart_or_message(chart_spend_by_category(results), "Spend by category is not available.", "spend_by_category")
+
+    with col2:
+        show_chart_or_message(chart_top_suppliers(results), "Supplier spend chart is not available.", "top_suppliers")
+
+    col3, col4 = st.columns(2)
+
+    with col3:
+        show_chart_or_message(chart_monthly_spend(results), "Monthly trend requires a valid invoice or purchase date.", "monthly_trend")
+
+    with col4:
+        category_supplier = (
+            results.groupby("category")
+            .agg(
+                spend=("annual_spend", "sum"),
+                supplier_count=("normalized_supplier_name", "nunique")
+                if "normalized_supplier_name" in results.columns
+                else ("supplier_name", "nunique"),
+            )
+            .reset_index()
+            .sort_values("spend", ascending=False)
+            .head(15)
+        )
+
+        if category_supplier.empty:
+            st.info("Category supplier summary is not available.")
+        else:
+            st.markdown("### Category Concentration Summary")
+            display = category_supplier.copy()
+            display["spend"] = display["spend"].apply(format_currency)
+            st.dataframe(make_display_table(display), use_container_width=True, hide_index=True)
+
+
+def render_supplier_risk_performance(supplier_diagnostics, spend_risk):
+    st.subheader("Supplier Risk & Performance")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        show_chart_or_message(chart_archetype_distribution(supplier_diagnostics), "Action archetype distribution is not available.", "archetype_distribution")
+
+    with col2:
+        show_chart_or_message(chart_contract_risk(supplier_diagnostics), "Contract risk chart requires contract status.", "contract_risk")
+
+    show_chart_or_message(chart_spend_at_risk_top_suppliers(supplier_diagnostics), "No spend-at-risk suppliers were detected.", "top_spend_at_risk")
+
+    st.markdown("### Supplier Diagnostic Table")
+
+    display_columns = [
+        "supplier",
+        "category",
+        "annual_spend",
+        "supplier_criticality",
+        "contract_status",
+        "contract_risk",
+        "on_time_delivery",
+        "prior_year_otd",
+        "defect_rate",
+        "prior_year_defect_rate",
+        "action_archetype",
+        "priority",
+        "recommended_action",
+        "why_flagged",
+    ]
+
+    available = [col for col in display_columns if col in supplier_diagnostics.columns]
+    display = supplier_diagnostics[available].copy()
+
+    if "annual_spend" in display.columns:
+        display["annual_spend"] = display["annual_spend"].apply(format_currency)
+
+    st.dataframe(make_display_table(display), use_container_width=True, hide_index=True)
+
+
+def render_action_pipeline(pipeline):
+    st.subheader("Procurement Action Pipeline")
+
+    st.markdown(
+        """
+        This pipeline converts supplier performance, spend, contract, and sourcing signals into management actions.
+        It is designed to support consulting-style prioritization and should be validated with category owners before execution.
+        """
+    )
+
+    if pipeline.empty:
+        st.warning("No action pipeline items were generated.")
+        return
+
+    cols = st.columns(4)
+    cols[0].metric("Pipeline Actions", format_number(len(pipeline)))
+    cols[1].metric("High Priority", format_number((pipeline["priority"] == "High").sum()))
+    cols[2].metric("Medium Priority", format_number((pipeline["priority"] == "Medium").sum()))
+    cols[3].metric("Value / Exposure", format_currency(pipeline["value_exposure"].sum()))
+
+    display_columns = [
+        "opportunity_action",
+        "supplier_or_category",
+        "category",
+        "action_archetype",
+        "value_exposure_display",
+        "priority",
+        "confidence",
+        "complexity",
+        "recommended_owner",
+        "next_step",
+        "validation_required",
+        "status",
+        "why_flagged",
+    ]
+
+    display = pipeline[display_columns].copy()
+    st.dataframe(make_display_table(display), use_container_width=True, hide_index=True)
+
+    st.markdown("### High-Priority Action Cards")
+
+    high_priority = pipeline[pipeline["priority"] == "High"].copy()
+
+    if high_priority.empty:
+        st.success("No high-priority action items were generated.")
+    else:
+        for _, row in high_priority.head(5).iterrows():
+            st.markdown(
+                f"""
+                <div class="section-card">
+                    <h4>{row.get("opportunity_action")}</h4>
+                    <p><strong>Value / Exposure:</strong> {row.get("value_exposure_display")}</p>
+                    <p><strong>Recommended Owner:</strong> {row.get("recommended_owner")}</p>
+                    <p><strong>Next Step:</strong> {row.get("next_step")}</p>
+                    <p><strong>Validation Required:</strong> {row.get("validation_required")}</p>
+                    <p><strong>Why Flagged:</strong> {row.get("why_flagged")}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    csv_export = pipeline.drop(columns=["value_exposure"], errors="ignore").to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="Download Action Pipeline CSV",
+        data=csv_export,
+        file_name="procurement_action_pipeline.csv",
+        mime="text/csv",
+    )
+
+
+def render_qbr_briefing(supplier_diagnostics, results):
+    st.subheader("Supplier QBR Briefing Mode")
+
+    if supplier_diagnostics.empty:
+        st.warning("No supplier diagnostics available.")
+        return
+
+    supplier_list = sorted(supplier_diagnostics["supplier"].dropna().astype(str).unique())
+
+    selected_supplier = st.selectbox(
+        "Select supplier for QBR briefing",
+        supplier_list,
+    )
+
+    row = supplier_diagnostics[supplier_diagnostics["supplier"] == selected_supplier].iloc[0]
+
+    supplier_col = "normalized_supplier_name" if "normalized_supplier_name" in results.columns else "supplier_name"
+    supplier_rows = results[results[supplier_col] == selected_supplier]
+
+    variants = []
+    if "original_supplier_name" in supplier_rows.columns:
+        variants = sorted(supplier_rows["original_supplier_name"].dropna().astype(str).unique())
+
+    flags = get_performance_flags(row)
+
+    spend = row.get("annual_spend", 0)
+    category = row.get("category", "Unclassified")
+    criticality = row.get("supplier_criticality", "Not available")
+    contract_status = row.get("contract_status", "Not available")
+    contract_risk = row.get("contract_risk", "Not evaluated")
+    action_archetype = row.get("action_archetype", "Maintain / Monitor")
+    recommended_action = row.get("recommended_action", "Continue monitoring through standard supplier management process.")
+    why_flagged = row.get("why_flagged", "No diagnostic flag available.")
+
+    st.markdown(f"### Supplier QBR Briefing — {selected_supplier}")
+
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Analyzed Spend", format_currency(spend))
+    metric_cols[1].metric("Category", str(category))
+    metric_cols[2].metric("Criticality", str(criticality))
+    metric_cols[3].metric("Contract Risk", str(contract_risk))
+
+    with st.container(border=True):
+        st.markdown("#### 1. Supplier Snapshot")
+        st.markdown(
+            f"**{selected_supplier}** represents **{format_currency(spend)}** in analyzed spend "
+            f"across the **{category}** category. Supplier criticality is **{criticality}**."
+        )
+
+    # Only show performance section if at least one performance field exists.
+    performance_fields = [
+        "on_time_delivery",
+        "prior_year_otd",
+        "defect_rate",
+        "prior_year_defect_rate",
+        "lead_time_days",
+    ]
+
+    has_performance_data = any(
+        field in supplier_diagnostics.columns and pd.notna(row.get(field))
+        for field in performance_fields
+    )
+
+    if has_performance_data:
+        with st.container(border=True):
+            st.markdown("#### 2. Performance Summary")
+
+            perf_cols = st.columns(5)
+
+            if "on_time_delivery" in supplier_diagnostics.columns:
+                perf_cols[0].metric("On-Time Delivery", format_percent(row.get("on_time_delivery")))
+
+            if "prior_year_otd" in supplier_diagnostics.columns:
+                perf_cols[1].metric("Prior-Year OTD", format_percent(row.get("prior_year_otd")))
+
+            if "defect_rate" in supplier_diagnostics.columns:
+                perf_cols[2].metric("Defect Rate", format_percent(row.get("defect_rate")))
+
+            if "prior_year_defect_rate" in supplier_diagnostics.columns:
+                perf_cols[3].metric("Prior-Year Defect", format_percent(row.get("prior_year_defect_rate")))
+
+            if "lead_time_days" in supplier_diagnostics.columns:
+                lead_time = row.get("lead_time_days")
+                lead_time_display = "Not available" if pd.isna(lead_time) else f"{float(lead_time):.1f} days"
+                perf_cols[4].metric("Lead Time", lead_time_display)
+    else:
+        with st.container(border=True):
+            st.markdown("#### 2. Performance Summary")
+            st.info(
+                "Supplier performance metrics such as OTD, defect rate, and lead time were not available "
+                "in this ERP spend file. The QBR view is therefore based on spend, category, contract, "
+                "supplier criticality, and diagnostic flags."
+            )
+
+    with st.container(border=True):
+        st.markdown("#### 3. Contract Position")
+        st.markdown(
+            f"- **Contract status:** {contract_status}\n"
+            f"- **Contract risk:** {contract_risk}"
+        )
+
+    with st.container(border=True):
+        st.markdown("#### 4. Supplier Action Archetype")
+        st.markdown(f"**{action_archetype}**")
+        st.markdown(
+            "This archetype translates the supplier’s spend, contract, criticality, and available performance "
+            "signals into a procurement management action."
+        )
+
+    with st.container(border=True):
+        st.markdown("#### 5. Why Supplier Was Flagged")
+        st.markdown(str(why_flagged))
+
+    with st.container(border=True):
+        st.markdown("#### 6. Recommended Action")
+        st.markdown(str(recommended_action))
+
+    with st.container(border=True):
+        st.markdown("#### 7. Internal Decision Required")
+        st.markdown(
+            "Procurement leadership should decide whether to **maintain the current relationship**, "
+            "**review contract coverage**, **shift volume**, **rationalize the supplier**, or "
+            "**escalate the supplier for further review** based on validated business impact."
+        )
+
+    if variants and len(variants) > 1:
+        with st.expander("Supplier Family Variants Detected"):
+            variant_df = pd.DataFrame(
+                {
+                    "original_supplier_variant": variants,
+                    "normalized_supplier": selected_supplier,
+                }
+            )
+            st.dataframe(make_display_table(variant_df), use_container_width=True, hide_index=True)
+
+    st.markdown("### Questions to Ask Supplier / Category Owner")
+
+    if has_performance_data:
+        questions = [
+            "What caused the delivery, quality, or lead-time performance change?",
+            "Which regions, sites, lanes, business units, or services are driving the issue?",
+            "What corrective action plan will restore performance within 60 days?",
+            "Are SLA credits, remedies, or service recovery commitments available?",
+            "Is the supplier’s current pricing justified given recent performance?",
+            "Should volume be maintained, reduced, shifted, or competitively reviewed?",
+        ]
+    else:
+        questions = [
+            "Is this supplier correctly mapped to the normalized supplier family?",
+            "Is the category assignment accurate and useful for sourcing analysis?",
+            "Is the supplier currently under contract, and is the contract metadata complete?",
+            "Is the spend addressable, or is it constrained by business, technical, or location requirements?",
+            "Should this supplier be part of a consolidation, contract review, or preferred-supplier strategy?",
+            "What additional data is needed before making a sourcing decision?",
         ]
 
-        available_columns = [
-            column
-            for column in display_columns
-            if column in category_table.columns
-        ]
+    for question in questions:
+        st.markdown(f"- {question}")
 
-        with st.expander(
-            f"View categories included in {recommendation['initiative']}"
-        ):
+    if flags:
+        st.markdown("### Performance Deterioration Flags")
+        st.dataframe(make_display_table(pd.DataFrame(flags)), use_container_width=True, hide_index=True)
+
+
+def render_cpo_briefing(supplier_diagnostics, pipeline, spend_risk, data_readiness):
+    st.subheader("CPO Executive Briefing")
+
+    total_spend = spend_risk.get("total_spend", 0)
+    spend_at_risk = spend_risk.get("spend_at_risk", 0)
+    spend_at_risk_pct = spend_risk.get("spend_at_risk_pct", 0)
+    contract_gap = spend_risk.get("contract_gap_spend", 0)
+    readiness_score = data_readiness.get("overall_score", 0)
+
+    supplier_count = supplier_diagnostics["supplier"].nunique() if not supplier_diagnostics.empty else 0
+    high_priority_count = int((pipeline["priority"] == "High").sum()) if not pipeline.empty else 0
+
+    st.markdown("### Executive Supplier & Spend Diagnostic")
+
+    metric_cols = st.columns(5)
+    metric_cols[0].metric("Total Spend", format_currency(total_spend))
+    metric_cols[1].metric("Suppliers", format_number(supplier_count))
+    metric_cols[2].metric("Spend at Risk", format_currency(spend_at_risk))
+    metric_cols[3].metric("% at Risk", format_percent(spend_at_risk_pct))
+    metric_cols[4].metric("Data Readiness", f"{readiness_score} / 100")
+
+    if spend_at_risk_pct >= 20:
+        overall_message = (
+            "Supplier and spend exposure appear material. Procurement leadership should prioritize validation "
+            "of high-risk suppliers, contract gaps, and addressable sourcing opportunities."
+        )
+    elif spend_at_risk_pct >= 10:
+        overall_message = (
+            "Supplier and spend exposure appear moderate. The near-term priority is to validate the highest-value "
+            "pipeline items and confirm which opportunities are addressable."
+        )
+    else:
+        overall_message = (
+            "Supplier and spend exposure appear manageable based on the available file. The biggest value is likely "
+            "in improving data quality, supplier normalization, contract visibility, and targeted opportunity review."
+        )
+
+    with st.container(border=True):
+        st.markdown("#### 1. Executive Summary")
+
+        summary_cols = st.columns(4)
+        summary_cols[0].metric("Analyzed Spend", format_currency(total_spend))
+        summary_cols[1].metric("Supplier Families", format_number(supplier_count))
+        summary_cols[2].metric("Spend at Risk", format_currency(spend_at_risk))
+        summary_cols[3].metric("% at Risk", format_percent(spend_at_risk_pct))
+
+        st.markdown(
+            "The diagnostic reviewed the uploaded supplier spend file and identified "
+            "the portion of spend associated with suppliers or opportunities requiring "
+            "procurement action."
+        )
+
+        st.markdown(overall_message)
+
+    top_supplier_text = "No high-risk supplier concentration detected."
+    top_risk = pd.DataFrame()
+
+    if not supplier_diagnostics.empty and "is_spend_at_risk" in supplier_diagnostics.columns:
+        top_risk = (
+            supplier_diagnostics[supplier_diagnostics["is_spend_at_risk"]]
+            .sort_values("annual_spend", ascending=False)
+            .head(5)
+        )
+
+    with st.container(border=True):
+        st.markdown("#### 2. Top Suppliers Requiring Attention")
+
+        if top_risk.empty:
+            st.success("No suppliers were flagged as spend-at-risk based on the current diagnostic rules.")
+        else:
+            display_cols = [
+                "supplier",
+                "category",
+                "annual_spend",
+                "action_archetype",
+                "priority",
+                "contract_risk",
+                "recommended_action",
+            ]
+            available_cols = [col for col in display_cols if col in top_risk.columns]
+            display = top_risk[available_cols].copy()
+
+            if "annual_spend" in display.columns:
+                display["annual_spend"] = display["annual_spend"].apply(format_currency)
+
+            st.dataframe(make_display_table(display), use_container_width=True, hide_index=True)
+
+    with st.container(border=True):
+        st.markdown("#### 3. Contract Coverage Exposure")
+        st.markdown(
+            f"Approximately **{format_currency(contract_gap)}** is associated with suppliers showing "
+            f"medium or high contract coverage risk. Procurement should validate whether this represents true "
+            f"unmanaged spend or incomplete contract metadata before initiating sourcing action."
+        )
+
+    with st.container(border=True):
+        st.markdown("#### 4. Priority Action Pipeline")
+
+        if pipeline.empty:
+            st.warning("No action pipeline items were generated.")
+        else:
+            pipeline_summary = pipeline.head(5).copy()
+
+            display_cols = [
+                "opportunity_action",
+                "supplier_or_category",
+                "value_exposure_display",
+                "priority",
+                "complexity",
+                "recommended_owner",
+                "next_step",
+            ]
+            available_cols = [col for col in display_cols if col in pipeline_summary.columns]
+
             st.dataframe(
-                make_display_table(category_table[available_columns]),
+                make_display_table(pipeline_summary[available_cols]),
                 use_container_width=True,
                 hide_index=True,
             )
 
-# -------------------------------------------------------------------
-# Chart helpers
-# -------------------------------------------------------------------
+            st.markdown(
+                f"The current action pipeline includes **{len(pipeline)} total actions**, including "
+                f"**{high_priority_count} high-priority actions**."
+            )
 
-def apply_chart_layout(fig, height: int = 390):
-    fig.update_layout(
-        height=height,
-        margin=dict(l=20, r=20, t=55, b=20),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(size=12),
-        title=dict(font=dict(size=17)),
-        legend=dict(
-            orientation="h",
-            yanchor="top",
-            y=-0.08,
-            xanchor="center",
-            x=0.5,
-        ),
-    )
-
-    fig.update_xaxes(
-        showgrid=True,
-        gridcolor="#e5e7eb",
-        zeroline=False,
-    )
-
-    fig.update_yaxes(
-        showgrid=False,
-        zeroline=False,
-    )
-
-    return fig
-
-
-def show_chart_or_message(fig, message: str, key: str):
-    if fig is None:
-        st.info(message)
-    else:
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
-            key=key,
+    with st.container(border=True):
+        st.markdown("#### 5. Key Management Implications")
+        st.markdown(
+            """
+- Prioritize the highest-value supplier and category actions before expanding the analysis.
+- Validate contract metadata before treating contract gaps as true unmanaged spend.
+- Review fuzzy supplier-family matches before making consolidation decisions.
+- Treat savings and exposure values as directional until category owners validate addressability.
+- Move validated opportunities into a formal sourcing or procurement action pipeline.
+            """
         )
 
+    st.markdown("### 30 / 60 / 90 Day Action Plan")
 
-def create_top_suppliers_chart(data: pd.DataFrame):
-    if (
-            data.empty
-            or "supplier_name" not in data.columns
-            or "annual_spend" not in data.columns
-    ):
-        return None
-
-    chart_data = (
-        data.groupby("supplier_name", dropna=False)["annual_spend"]
-        .sum()
-        .reset_index()
-        .sort_values(by="annual_spend", ascending=False)
-        .head(10)
-        .sort_values(by="annual_spend", ascending=True)
-    )
-
-    fig = px.bar(
-        chart_data,
-        x="annual_spend",
-        y="supplier_name",
-        orientation="h",
-        title="Top 10 Suppliers by Spend",
-        labels={
-            "annual_spend": "Spend",
-            "supplier_name": "Supplier",
-        },
-    )
-
-    return apply_chart_layout(fig)
-
-
-def create_top_categories_chart(data: pd.DataFrame):
-    if (
-            data.empty
-            or "category" not in data.columns
-            or "annual_spend" not in data.columns
-    ):
-        return None
-
-    chart_data = (
-        data.groupby("category", dropna=False)["annual_spend"]
-        .sum()
-        .reset_index()
-        .sort_values(by="annual_spend", ascending=False)
-        .head(10)
-        .sort_values(by="annual_spend", ascending=True)
-    )
-
-    fig = px.bar(
-        chart_data,
-        x="annual_spend",
-        y="category",
-        orientation="h",
-        title="Top Categories by Spend",
-        labels={
-            "annual_spend": "Spend",
-            "category": "Category",
-        },
-    )
-
-    return apply_chart_layout(fig)
-
-
-def create_spend_by_region_chart(data: pd.DataFrame):
-    if (
-            data.empty
-            or "region" not in data.columns
-            or "annual_spend" not in data.columns
-    ):
-        return None
-
-    chart_data = (
-        data.dropna(subset=["region"])
-        .groupby("region", dropna=False)["annual_spend"]
-        .sum()
-        .reset_index()
-        .sort_values(by="annual_spend", ascending=False)
-    )
-
-    if chart_data.empty:
-        return None
-
-    fig = px.bar(
-        chart_data,
-        x="region",
-        y="annual_spend",
-        title="Spend by Region",
-        labels={
-            "region": "Region",
-            "annual_spend": "Spend",
-        },
-    )
-
-    return apply_chart_layout(fig)
-
-
-def create_spend_by_business_unit_chart(data: pd.DataFrame):
-    if (
-            data.empty
-            or "business_unit" not in data.columns
-            or "annual_spend" not in data.columns
-    ):
-        return None
-
-    chart_data = (
-        data.dropna(subset=["business_unit"])
-        .groupby("business_unit", dropna=False)["annual_spend"]
-        .sum()
-        .reset_index()
-        .sort_values(by="annual_spend", ascending=False)
-    )
-
-    if chart_data.empty:
-        return None
-
-    fig = px.bar(
-        chart_data,
-        x="business_unit",
-        y="annual_spend",
-        title="Spend by Business Unit",
-        labels={
-            "business_unit": "Business Unit",
-            "annual_spend": "Spend",
-        },
-    )
-
-    return apply_chart_layout(fig)
-
-
-def create_monthly_spend_trend_chart(data: pd.DataFrame):
-    if (
-            data.empty
-            or "invoice_month" not in data.columns
-            or "annual_spend" not in data.columns
-    ):
-        return None
-
-    chart_data = data.dropna(subset=["invoice_month"]).copy()
-
-    if chart_data.empty:
-        return None
-
-    chart_data = (
-        chart_data.groupby("invoice_month", dropna=False)["annual_spend"]
-        .sum()
-        .reset_index()
-        .sort_values(by="invoice_month")
-    )
-
-    fig = px.line(
-        chart_data,
-        x="invoice_month",
-        y="annual_spend",
-        markers=True,
-        title="Spend Trend Over Time",
-        labels={
-            "invoice_month": "Month",
-            "annual_spend": "Spend",
-        },
-    )
-
-    return apply_chart_layout(fig)
-
-
-def create_supplier_count_by_category_chart(data: pd.DataFrame):
-    if (
-            data.empty
-            or "category" not in data.columns
-            or "supplier_name" not in data.columns
-    ):
-        return None
-
-    chart_data = (
-        data.groupby("category", dropna=False)["supplier_name"]
-        .nunique()
-        .reset_index(name="supplier_count")
-        .sort_values(by="supplier_count", ascending=False)
-        .head(10)
-        .sort_values(by="supplier_count", ascending=True)
-    )
-
-    fig = px.bar(
-        chart_data,
-        x="supplier_count",
-        y="category",
-        orientation="h",
-        title="Supplier Count by Category",
-        labels={
-            "supplier_count": "Supplier Count",
-            "category": "Category",
-        },
-    )
-
-    return apply_chart_layout(fig)
-
-
-def create_opportunity_savings_chart(opportunities: pd.DataFrame):
-    if opportunities.empty:
-        return None
-
-    required_columns = {
-        "category",
-        "estimated_savings_low",
-        "estimated_savings_high",
-    }
-
-    if not required_columns.issubset(opportunities.columns):
-        return None
-
-    wide_data = (
-        opportunities.groupby("category", dropna=False)[
-            ["estimated_savings_low", "estimated_savings_high"]
+    plan = pd.DataFrame(
+        [
+            {
+                "timeframe": "30 days",
+                "actions": (
+                    "Validate supplier normalization, review top spend-at-risk suppliers, confirm contract status, "
+                    "and align with category owners on which findings are addressable."
+                ),
+            },
+            {
+                "timeframe": "60 days",
+                "actions": (
+                    "Launch contract reviews, supplier rationalization assessments, or sourcing wave analyses "
+                    "for validated high-priority opportunities."
+                ),
+            },
+            {
+                "timeframe": "90 days",
+                "actions": (
+                    "Convert validated findings into sourcing events, supplier governance actions, savings tracking, "
+                    "and recurring spend intelligence reporting."
+                ),
+            },
         ]
-        .sum()
-        .reset_index()
-        .sort_values(by="estimated_savings_high", ascending=False)
-        .head(10)
-        .sort_values(by="estimated_savings_high", ascending=True)
     )
 
-    chart_data = wide_data.melt(
-        id_vars="category",
-        value_vars=[
-            "estimated_savings_low",
-            "estimated_savings_high",
-        ],
-        var_name="estimate_type",
-        value_name="estimated_savings",
-    )
+    st.dataframe(make_display_table(plan), use_container_width=True, hide_index=True)
 
-    chart_data["estimate_type"] = chart_data["estimate_type"].replace(
-        {
-            "estimated_savings_low": "Low estimate",
-            "estimated_savings_high": "High estimate",
-        }
-    )
-
-    fig = px.bar(
-        chart_data,
-        x="estimated_savings",
-        y="category",
-        color="estimate_type",
-        orientation="h",
-        barmode="group",
-        title="Top Categories by Estimated Savings Potential",
-        labels={
-            "estimated_savings": "Estimated Savings",
-            "category": "Category",
-            "estimate_type": "Savings Estimate",
-        },
-    )
-
-    fig.update_layout(
-        legend_title_text="Savings Estimate",
-    )
-
-    return apply_chart_layout(fig)
-
-def create_opportunity_type_chart(opportunities: pd.DataFrame):
-    if opportunities.empty or "opportunity_type" not in opportunities.columns:
-        return None
-
-    chart_data = (
-        opportunities.groupby("opportunity_type", dropna=False)
-        .size()
-        .reset_index(name="opportunity_count")
-        .sort_values(by="opportunity_count", ascending=False)
-    )
-
-    fig = px.pie(
-        chart_data,
-        names="opportunity_type",
-        values="opportunity_count",
-        title="Opportunity Mix",
-    )
-
-    return apply_chart_layout(fig)
-
-
-def create_priority_chart(opportunities: pd.DataFrame):
-    if opportunities.empty or "priority" not in opportunities.columns:
-        return None
-
-    chart_data = (
-        opportunities.groupby("priority", dropna=False)
-        .size()
-        .reset_index(name="opportunity_count")
-    )
-
-    fig = px.bar(
-        chart_data,
-        x="priority",
-        y="opportunity_count",
-        title="Opportunities by Priority",
-        labels={
-            "priority": "Priority",
-            "opportunity_count": "Opportunity Count",
-        },
-    )
-
-    return apply_chart_layout(fig)
-
-
-# -------------------------------------------------------------------
-# Procurement opportunity engine
-# -------------------------------------------------------------------
-
-def assign_priority(
-        savings_amount: float,
-        supplier_count: int,
-        opportunity_type: str,
-) -> str:
-    if savings_amount >= 10000 or supplier_count >= 5:
-        return "High"
-
-    if savings_amount >= 3000 or supplier_count >= 3:
-        return "Medium"
-
-    return "Low"
-
-
-def estimate_savings_pct(
-        opportunity_type: str,
-        supplier_count: int,
-        contract_gap_pct: float = 0,
-) -> tuple[float, float]:
-    if opportunity_type == "Fragmented category":
-        if supplier_count >= 8:
-            return 0.07, 0.12
-        if supplier_count >= 5:
-            return 0.05, 0.09
-        return 0.03, 0.06
-
-    if opportunity_type == "Tail spend cleanup":
-        return 0.03, 0.08
-
-    if opportunity_type == "No contract coverage":
-        if contract_gap_pct >= 50:
-            return 0.06, 0.10
-        return 0.04, 0.07
-
-    if opportunity_type == "Supplier consolidation":
-        return 0.04, 0.10
-
-    return 0.02, 0.05
-
-
-def create_rationalization_opportunities(
-        supplier_data: pd.DataFrame,
-) -> pd.DataFrame:
-    data = supplier_data.copy()
-
-    if (
-            data.empty
-            or "category" not in data.columns
-            or "annual_spend" not in data.columns
-            or "supplier_name" not in data.columns
-    ):
-        return pd.DataFrame()
-
-    opportunities = []
-
-    grouped = data.groupby("category", dropna=False)
-
-    for category, category_data in grouped:
-        total_spend = float(
-            pd.to_numeric(
-                category_data["annual_spend"],
-                errors="coerce",
-            )
-            .fillna(0)
-            .sum()
+    with st.container(border=True):
+        st.markdown("#### 6. Decisions Needed From Procurement Leadership")
+        st.markdown(
+            """
+- Which suppliers require immediate commercial or contract review?
+- Which supplier-family matches should be approved before consolidation analysis?
+- Which categories should move into sourcing wave assessment?
+- Which opportunities are addressable based on business requirements and contract constraints?
+- Which action owners should be assigned to the highest-priority pipeline items?
+            """
         )
 
-        supplier_count = int(category_data["supplier_name"].nunique())
-
-        if total_spend <= 0:
-            continue
-
-        low_spend_suppliers = category_data[
-            pd.to_numeric(
-                category_data["annual_spend"],
-                errors="coerce",
-            ).fillna(0)
-            < 10000
-            ]
-
-        tail_spend = float(
-            pd.to_numeric(
-                low_spend_suppliers["annual_spend"],
-                errors="coerce",
-            )
-            .fillna(0)
-            .sum()
+    with st.container(border=True):
+        st.markdown("#### 7. Limitations")
+        st.markdown(
+            f"""
+This briefing is based on the uploaded ERP/spend extract and the current diagnostic rules. 
+The file may not include supplier performance, service levels, contract terms, market pricing, preferred supplier status, 
+or stakeholder feedback. Current data readiness score is **{readiness_score} / 100**. 
+Recommendations should be validated before execution.
+            """
         )
 
-        tail_supplier_count = int(
-            low_spend_suppliers["supplier_name"].nunique()
-        )
+def render_data_readiness(results, supplier_normalization_summary, data_readiness, mapping):
+    st.subheader("Data Readiness / Methodology")
 
-        no_contract_count = 0
+    cols = st.columns(3)
+    cols[0].metric("Data Readiness Score", f"{data_readiness.get('overall_score', 0)} / 100")
+    cols[1].metric("Rows Analyzed", format_number(len(results)))
+    cols[2].metric("Potential Duplicate Families", format_number(data_readiness.get("duplicate_family_count", 0)))
 
-        if "contract_status" in category_data.columns:
-            no_contract_count = int(
-                category_data["contract_status"]
-                .fillna("")
-                .astype(str)
-                .str.lower()
-                .isin(
-                    [
-                        "no contract",
-                        "not contracted",
-                        "none",
-                        "expired",
-                        "missing",
-                    ]
-                )
-                .sum()
-            )
+    st.markdown("### Data Readiness Dimensions")
 
-        contract_gap_pct = (
-            no_contract_count / len(category_data) * 100
-            if len(category_data) > 0
-            else 0
-        )
-
-        if supplier_count >= 4:
-            low_pct, high_pct = estimate_savings_pct(
-                "Fragmented category",
-                supplier_count,
-            )
-
-            savings_low = total_spend * low_pct
-            savings_high = total_spend * high_pct
-
-            target_supplier_count = max(
-                2,
-                round(supplier_count * 0.6),
-            )
-
-            suggested_reduction = max(
-                supplier_count - target_supplier_count,
-                1,
-            )
-
-            opportunities.append(
-                {
-                    "opportunity_type": "Fragmented category",
-                    "category": category,
-                    "current_suppliers": supplier_count,
-                    "total_spend": total_spend,
-                    "suggested_supplier_reduction": suggested_reduction,
-                    "suggested_target_suppliers": target_supplier_count,
-                    "rationale": (
-                        f"{category} has {supplier_count} suppliers. A focused preferred-supplier review "
-                        f"could target approximately {target_supplier_count} suppliers while maintaining coverage."
-                    ),
-                    "estimated_savings_low": savings_low,
-                    "estimated_savings_high": savings_high,
-                    "estimated_savings_range": (
-                        f"${savings_low:,.0f} - ${savings_high:,.0f}"
-                    ),
-                    "priority": assign_priority(
-                        savings_high,
-                        supplier_count,
-                        "Fragmented category",
-                    ),
-                    "next_action": (
-                        f"Segment {category} suppliers by spend, region, and service overlap; identify preferred suppliers and transition tail suppliers where feasible."
-                    ),
-                }
-            )
-
-        if tail_supplier_count >= 3 and tail_spend > 0:
-            low_pct, high_pct = estimate_savings_pct(
-                "Tail spend cleanup",
-                tail_supplier_count,
-            )
-
-            savings_low = tail_spend * low_pct
-            savings_high = tail_spend * high_pct
-
-            opportunities.append(
-                {
-                    "opportunity_type": "Tail spend cleanup",
-                    "category": category,
-                    "current_suppliers": tail_supplier_count,
-                    "total_spend": tail_spend,
-                    "suggested_supplier_reduction": max(
-                        round(tail_supplier_count * 0.5),
-                        1,
-                    ),
-                    "rationale": (
-                        f"{category} has {tail_supplier_count} low-spend suppliers under $10K."
-                    ),
-                    "estimated_savings_low": savings_low,
-                    "estimated_savings_high": savings_high,
-                    "estimated_savings_range": (
-                        f"${savings_low:,.0f} - ${savings_high:,.0f}"
-                    ),
-                    "priority": assign_priority(
-                        savings_high,
-                        tail_supplier_count,
-                        "Tail spend cleanup",
-                    ),
-                    "next_action": (
-                        f"Consolidate low-spend suppliers in {category} into preferred suppliers or catalogs."
-                    ),
-                }
-            )
-
-        if no_contract_count >= 2:
-            low_pct, high_pct = estimate_savings_pct(
-                "No contract coverage",
-                supplier_count,
-                contract_gap_pct,
-            )
-
-            savings_low = total_spend * low_pct
-            savings_high = total_spend * high_pct
-
-            opportunities.append(
-                {
-                    "opportunity_type": "No contract coverage",
-                    "category": category,
-                    "current_suppliers": supplier_count,
-                    "total_spend": total_spend,
-                    "suggested_supplier_reduction": 0,
-                    "rationale": (
-                        f"{no_contract_count} supplier records in {category} appear to lack active contract coverage."
-                    ),
-                    "estimated_savings_low": savings_low,
-                    "estimated_savings_high": savings_high,
-                    "estimated_savings_range": (
-                        f"${savings_low:,.0f} - ${savings_high:,.0f}"
-                    ),
-                    "priority": assign_priority(
-                        savings_high,
-                        supplier_count,
-                        "No contract coverage",
-                    ),
-                    "next_action": (
-                        f"Review contract status and negotiate pricing or terms for uncovered {category} suppliers."
-                    ),
-                }
-            )
-
-    opportunities_data = pd.DataFrame(opportunities)
-
-    if opportunities_data.empty:
-        return opportunities_data
-
-    priority_order = {
-        "High": 1,
-        "Medium": 2,
-        "Low": 3,
-    }
-
-    opportunities_data["priority_sort"] = opportunities_data["priority"].map(
-        priority_order
+    dimension_df = pd.DataFrame(
+        data_readiness["dimensions"],
+        columns=["dimension", "score"],
     )
 
-    opportunities_data = (
-        opportunities_data.sort_values(
-            by=["priority_sort", "estimated_savings_high"],
-            ascending=[True, False],
-        )
-        .drop(columns=["priority_sort"])
-        .reset_index(drop=True)
+    dimension_df["score"] = dimension_df["score"].round(1)
+    st.dataframe(make_display_table(dimension_df), use_container_width=True, hide_index=True)
+
+    st.markdown("### Data Limitations")
+    for item in data_readiness["limitations"]:
+        st.markdown(f"- {item}")
+
+    st.markdown("### Recommended Cleanup Actions")
+    for item in data_readiness["cleanup_actions"]:
+        st.markdown(f"- {item}")
+
+    st.markdown("### Methodology Notes")
+    st.markdown(
+        """
+        - Supplier action archetypes are assigned using rule-based logic based on spend, criticality, contract coverage, and performance deterioration.
+        - Spend-at-risk includes suppliers flagged as Executive Escalation, Watchlist Supplier, Contract Review Priority, Rationalization Candidate, or Alternate Source Required.
+        - Fuzzy supplier family normalization uses alias rules and RapidFuzz similarity matching.
+        - Savings estimates are directional and intended for opportunity prioritization, not finance-approved savings.
+        - All recommendations require procurement validation before business action.
+        """
     )
 
-    return opportunities_data
-
-
-def summarize_opportunity_pipeline(
-        opportunities: pd.DataFrame,
-) -> dict:
-    if opportunities.empty:
-        return {
-            "opportunity_count": 0,
-            "high_priority_count": 0,
-            "estimated_savings_low": 0,
-            "estimated_savings_high": 0,
-            "top_category": "N/A",
-        }
-
-    high_priority_count = int(
-        (opportunities["priority"] == "High").sum()
-    )
-
-    top_category = (
-        opportunities.sort_values(
-            by="estimated_savings_high",
-            ascending=False,
-        )
-        .iloc[0]["category"]
-    )
-
-    return {
-        "opportunity_count": len(opportunities),
-        "high_priority_count": high_priority_count,
-        "estimated_savings_low": float(
-            opportunities["estimated_savings_low"].sum()
-        ),
-        "estimated_savings_high": float(
-            opportunities["estimated_savings_high"].sum()
-        ),
-        "top_category": top_category,
-    }
-
-
-def create_procurement_recommendations(
-    opportunities: pd.DataFrame,
-) -> list[dict]:
-    if opportunities.empty:
-        return [
-            {
-                "initiative": "Improve spend data completeness",
-                "recommendation": (
-                    "Improve the uploaded spend file before deeper sourcing analysis."
-                ),
-                "rationale": (
-                    "The file may have limited supplier, category, contract, or transaction-level detail."
-                ),
-                "procurement_action": (
-                    "Add category, business unit, region, contract status, payment terms, "
-                    "transaction date, and supplier identifiers where available."
-                ),
-                "expected_benefit": (
-                    "Better classification, richer sourcing insights, and stronger savings estimates."
-                ),
-                "categories": [],
-                "estimated_savings_range": "Not estimated",
-                "priority": "Medium",
-                "difficulty": "Low",
-            }
-        ]
-
-    recommendations = []
-
-    grouped_opportunities = opportunities.groupby(
-        "opportunity_type",
-        dropna=False,
-    )
-
-    for opportunity_type, group in grouped_opportunities:
-        group = group.sort_values(
-            by="estimated_savings_high",
-            ascending=False,
-        )
-
-        total_low = float(group["estimated_savings_low"].sum())
-        total_high = float(group["estimated_savings_high"].sum())
-
-        high_priority_count = int(
-            (group["priority"] == "High").sum()
-        )
-
-        priority = (
-            "High"
-            if high_priority_count > 0
-            else "Medium"
-            if len(group) >= 2
-            else "Low"
-        )
-
-        category_rows = []
-
-        for _, row in group.head(8).iterrows():
-            category_rows.append(
-                {
-                    "category": row["category"],
-                    "current_suppliers": int(row.get("current_suppliers", 0)),
-                    "target_suppliers": (
-                        int(row["suggested_target_suppliers"])
-                        if "suggested_target_suppliers" in row
-                        and pd.notna(row["suggested_target_suppliers"])
-                        else None
-                    ),
-                    "estimated_savings_range": row["estimated_savings_range"],
-                    "priority": row["priority"],
-                }
+    if mapping:
+        with st.expander("Review column mapping used by the tool"):
+            mapping_df = pd.DataFrame(
+                [{"uploaded_column": key, "mapped_to": value} for key, value in mapping.items()]
             )
+            st.dataframe(make_display_table(mapping_df), use_container_width=True, hide_index=True)
 
-        if opportunity_type == "Fragmented category":
-            initiative = "Preferred supplier rationalization"
+    if supplier_normalization_summary is not None and not supplier_normalization_summary.empty:
+        with st.expander("Review supplier family normalization"):
+            display = supplier_normalization_summary.copy()
+            display["total_spend"] = display["total_spend"].apply(format_currency)
+            st.dataframe(make_display_table(display), use_container_width=True, hide_index=True)
 
-            recommendation = (
-                "Launch a preferred-supplier rationalization program across fragmented categories."
-            )
 
-            rationale = (
-                "Several categories have broad supplier bases, which may dilute buying leverage, "
-                "increase supplier management effort, and make it harder to enforce preferred buying channels."
-            )
-
-            procurement_action = (
-                "Prioritize the largest fragmented categories, segment suppliers by spend and business coverage, "
-                "then define preferred suppliers while protecting operational continuity."
-            )
-
-            expected_benefit = (
-                "Stronger negotiation leverage, simpler supplier governance, and reduced long-tail complexity."
-            )
-
-            difficulty = "Medium"
-
-        elif opportunity_type == "Tail spend cleanup":
-            initiative = "Tail spend cleanup"
-
-            recommendation = (
-                "Create a tail-spend cleanup workstream for low-spend suppliers."
-            )
-
-            rationale = (
-                "Low-spend suppliers can create disproportionate process cost through vendor maintenance, "
-                "PO processing, fragmented buying, and compliance leakage."
-            )
-
-            procurement_action = (
-                "Move recurring low-value purchases to catalogs, preferred suppliers, P-cards, blanket POs, "
-                "or buying channels with lighter governance."
-            )
-
-            expected_benefit = (
-                "Lower administrative effort, cleaner supplier master data, and improved buying compliance."
-            )
-
-            difficulty = "Low"
-
-        elif opportunity_type == "No contract coverage":
-            initiative = "Contract coverage review"
-
-            recommendation = (
-                "Review categories with apparent contract coverage gaps."
-            )
-
-            rationale = (
-                "Spend without active contract coverage may be exposed to pricing leakage, weak terms, "
-                "unclear service levels, or inconsistent supplier governance."
-            )
-
-            procurement_action = (
-                "Validate contract status, then prioritize renewals, renegotiations, preferred agreements, "
-                "or sourcing events for uncovered spend."
-            )
-
-            expected_benefit = (
-                "Improved commercial control, stronger payment and service terms, and reduced unmanaged spend exposure."
-            )
-
-            difficulty = "Medium"
-
-        else:
-            initiative = "Sourcing opportunity review"
-
-            recommendation = (
-                f"Review {opportunity_type} opportunities across relevant categories."
-            )
-
-            rationale = (
-                "The data suggests potential sourcing or supplier management improvement areas."
-            )
-
-            procurement_action = (
-                "Review category-level spend, supplier overlap, business unit usage, and contract coverage."
-            )
-
-            expected_benefit = (
-                "Potential savings and improved procurement control."
-            )
-
-            difficulty = "Medium"
-
-        recommendations.append(
-            {
-                "initiative": initiative,
-                "recommendation": recommendation,
-                "rationale": rationale,
-                "procurement_action": procurement_action,
-                "expected_benefit": expected_benefit,
-                "categories": category_rows,
-                "estimated_savings_range": (
-                    f"${total_low:,.0f} - ${total_high:,.0f}"
-                ),
-                "priority": priority,
-                "difficulty": difficulty,
-            }
-        )
-
-    priority_order = {
-        "High": 1,
-        "Medium": 2,
-        "Low": 3,
-    }
-
-    recommendations = sorted(
-        recommendations,
-        key=lambda item: (
-            priority_order.get(item["priority"], 99),
-            -float(
-                item["estimated_savings_range"]
-                .split(" - ")[1]
-                .replace("$", "")
-                .replace(",", "")
-            )
-            if item["estimated_savings_range"] != "Not estimated"
-            else 0,
-        ),
-    )
-
-    return recommendations
-# -------------------------------------------------------------------
-# Processing helpers
-# -------------------------------------------------------------------
-
-def score_uploaded_sheet(data: pd.DataFrame) -> int:
-    """
-    Score a sheet based on whether it looks like transaction-level spend data.
-    Higher score = better candidate for analysis.
-    """
-    if data.empty:
-        return 0
-
-    normalized_columns = [
-        str(column).strip().lower().replace("_", " ")
-        for column in data.columns
-    ]
-
-    score = 0
-
-    supplier_signals = [
-        "supplier name",
-        "supplier",
-        "vendor name",
-        "vendor",
-    ]
-
-    spend_signals = [
-        "spend amount usd",
-        "spend amount",
-        "invoice amount",
-        "po amount",
-        "amount",
-        "total spend",
-        "original currency amount",
-    ]
-
-    description_signals = [
-        "item description",
-        "description",
-        "transaction description",
-    ]
-
-    date_signals = [
-        "invoice date",
-        "posting date",
-        "transaction date",
-    ]
-
-    category_signals = [
-        "category",
-        "category l1",
-        "category l2",
-        "commodity",
-        "subcategory",
-    ]
-
-    for column in normalized_columns:
-        if column in supplier_signals:
-            score += 30
-        if column in spend_signals:
-            score += 30
-        if column in description_signals:
-            score += 15
-        if column in date_signals:
-            score += 10
-        if column in category_signals:
-            score += 10
-
-    # Real spend tabs usually have many rows.
-    if len(data) > 20:
-        score += 10
-
-    return score
-
-
-def load_uploaded_data(uploaded_file) -> pd.DataFrame:
-    """
-    Load CSV or Excel upload.
-
-    For multi-sheet Excel files, automatically choose the sheet that
-    looks most like spend transaction data.
-    """
-    file_name = uploaded_file.name.lower()
-
-    if file_name.endswith(".csv"):
-        return pd.read_csv(uploaded_file)
-
-    if file_name.endswith(".xlsx") or file_name.endswith(".xls"):
-        excel_file = pd.ExcelFile(uploaded_file)
-
-        best_sheet_name = None
-        best_sheet_data = None
-        best_score = -1
-
-        for sheet_name in excel_file.sheet_names:
-            candidate_data = pd.read_excel(
-                uploaded_file,
-                sheet_name=sheet_name,
-            )
-
-            candidate_score = score_uploaded_sheet(
-                candidate_data
-            )
-
-            if candidate_score > best_score:
-                best_score = candidate_score
-                best_sheet_name = sheet_name
-                best_sheet_data = candidate_data
-
-        if best_sheet_data is None:
-            raise ValueError(
-                "No readable sheet found in the uploaded Excel file."
-            )
-
-        st.sidebar.success(
-            f"Using Excel sheet: {best_sheet_name}"
-        )
-
-        return best_sheet_data
-
-    raise ValueError(
-        "Unsupported file type. Please upload a CSV or Excel file."
-    )
-
-def create_category_metrics(data: pd.DataFrame) -> pd.DataFrame:
-    if (
-            data.empty
-            or "category" not in data.columns
-            or "annual_spend" not in data.columns
-            or "supplier_name" not in data.columns
-    ):
-        return pd.DataFrame()
-
-    grouped = data.groupby("category", dropna=False)
-
-    category_metrics = grouped.agg(
-        total_category_spend=("annual_spend", "sum"),
-        supplier_count=("supplier_name", "nunique"),
-        transaction_count=("supplier_name", "count"),
-    ).reset_index()
-
-    total_spend = category_metrics["total_category_spend"].sum()
-
-    category_metrics["category_spend_share_pct"] = (
-        category_metrics["total_category_spend"] / total_spend * 100
-        if total_spend > 0
-        else 0
-    )
-
-    top_supplier_share_rows = []
-
-    for category, category_data in grouped:
-        supplier_spend = (
-            category_data.groupby("supplier_name")["annual_spend"]
-            .sum()
-            .sort_values(ascending=False)
-        )
-
-        top_supplier_share = (
-            supplier_spend.iloc[0] / supplier_spend.sum() * 100
-            if len(supplier_spend) > 0 and supplier_spend.sum() > 0
-            else 0
-        )
-
-        tail_supplier_count = int(
-            (
-                    category_data.groupby("supplier_name")["annual_spend"]
-                    .sum()
-                    < 10000
-            ).sum()
-        )
-
-        top_supplier_share_rows.append(
-            {
-                "category": category,
-                "top_supplier_share_pct": top_supplier_share,
-                "tail_supplier_count": tail_supplier_count,
-            }
-        )
-
-    supplier_share_data = pd.DataFrame(top_supplier_share_rows)
-
-    category_metrics = category_metrics.merge(
-        supplier_share_data,
-        on="category",
-        how="left",
-    )
-
-    category_metrics["concentration_risk_flag"] = (
-            category_metrics["top_supplier_share_pct"] >= 60
-    )
-
-    category_metrics["fragmentation_review_flag"] = (
-            category_metrics["supplier_count"] >= 4
-    )
-
-    category_metrics["tail_spend_review_flag"] = (
-            category_metrics["tail_supplier_count"] >= 3
-    )
-
-    return category_metrics.sort_values(
-        by="total_category_spend",
-        ascending=False,
-    ).reset_index(drop=True)
-
-
-def add_attention_scoring(data: pd.DataFrame) -> pd.DataFrame:
-    data = data.copy()
-
-    if "annual_spend" not in data.columns:
-        data["annual_spend"] = 0
-
-    data["annual_spend"] = pd.to_numeric(
-        data["annual_spend"],
-        errors="coerce",
-    ).fillna(0)
-
-    if "prior_year_spend" in data.columns:
-        prior_spend = pd.to_numeric(
-            data["prior_year_spend"],
-            errors="coerce",
-        )
-
-        data["spend_change_pct"] = (
-                (data["annual_spend"] - prior_spend)
-                / prior_spend.replace(0, pd.NA)
-                * 100
-        )
-    else:
-        data["spend_change_pct"] = pd.NA
-
-    score = pd.Series(0, index=data.index, dtype="float")
-
-    spend_threshold = data["annual_spend"].quantile(0.75)
-
-    score += (data["annual_spend"] >= spend_threshold).astype(int) * 25
-
-    if "spend_change_pct" in data.columns:
-        score += (
-                pd.to_numeric(data["spend_change_pct"], errors="coerce")
-                .fillna(0)
-                .gt(25)
-                .astype(int)
-                * 20
-        )
-
-    if "contract_status" in data.columns:
-        no_contract = (
-            data["contract_status"]
-            .fillna("")
-            .astype(str)
-            .str.lower()
-            .isin(["no contract", "not contracted", "none", "expired", "missing"])
-        )
-        score += no_contract.astype(int) * 20
-
-    if "needs_classification_review" in data.columns:
-        score += data["needs_classification_review"].fillna(False).astype(bool).astype(int) * 10
-
-    if "supplier_criticality" in data.columns:
-        criticality = data["supplier_criticality"].fillna("").astype(str).str.lower()
-        score += criticality.isin(["high", "critical", "strategic"]).astype(int) * 15
-
-    if "on_time_delivery_pct" in data.columns:
-        otd = pd.to_numeric(data["on_time_delivery_pct"], errors="coerce")
-        score += otd.lt(85).fillna(False).astype(int) * 10
-
-    data["attention_score"] = score.clip(0, 100).round(0)
-
-    data["attention_level"] = pd.cut(
-        data["attention_score"],
-        bins=[-1, 39, 69, 100],
-        labels=["Low", "Medium", "High"],
-    ).astype(str)
-
-    return data
-
-
-def prepare_supplier_data(
-        raw_data: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, dict, pd.DataFrame, dict, dict]:
-    mapped_data, mapping_report = map_columns(raw_data)
-
-    supplier_data = clean_supplier_data(mapped_data)
-
-    supplier_data = add_invoice_period_columns(supplier_data)
-
-    date_summary = summarize_date_coverage(supplier_data)
-
-    supplier_data = classify_spend_data(supplier_data)
-
-    supplier_data["category"] = supplier_data["analysis_category"]
-
-    aggregation_time_grain = (
-        "month"
-        if date_summary.get("has_date_column") and date_summary.get("valid_date_rows", 0) > 0
-        else None
-    )
-
-    pre_aggregation_data = supplier_data.copy()
-
-    was_aggregated = should_aggregate_supplier_data(
-        supplier_data,
-        time_grain=aggregation_time_grain,
-    )
-
-    if was_aggregated:
-        supplier_data = aggregate_supplier_category_data(
-            supplier_data,
-            time_grain=aggregation_time_grain,
-        )
-
-    aggregation_summary = create_aggregation_summary(
-        before_data=pre_aggregation_data,
-        after_data=supplier_data,
-        was_aggregated=was_aggregated,
-        time_grain=aggregation_time_grain,
-    )
-
-    readiness_report = create_data_readiness_report(
-        supplier_data,
-        mapping_report=mapping_report,
-    )
-
-    if not readiness_report["minimum_required_ready"]:
-        raise ValueError(
-            "Uploaded file is missing required fields: "
-            + ", ".join(readiness_report["missing_required_columns"])
-        )
-
-    supplier_data = ensure_optional_analysis_columns(supplier_data)
-
-    supplier_data = add_attention_scoring(supplier_data)
-
-    category_metrics = create_category_metrics(supplier_data)
-
-    return (
-        supplier_data,
-        category_metrics,
-        readiness_report,
-        mapping_report,
-        date_summary,
-        aggregation_summary,
-    )
-
-
-def create_excel_download(dataframes: dict[str, pd.DataFrame]) -> bytes:
-    output = BytesIO()
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        for sheet_name, dataframe in dataframes.items():
-            safe_sheet_name = sheet_name[:31]
-            dataframe.to_excel(
-                writer,
-                sheet_name=safe_sheet_name,
-                index=False,
-            )
-
-    return output.getvalue()
-
-
-# -------------------------------------------------------------------
-# App
-# -------------------------------------------------------------------
+# ============================================================
+# MAIN APP
+# ============================================================
 
 def main():
-    apply_custom_styles()
+    apply_global_styles()
 
     st.markdown(
         """
-    <div class="hero-card">
-      <div style="text-transform: uppercase; letter-spacing: 0.35em; font-size: 0.78rem; color: #93c5fd; margin-bottom: 0.85rem; font-weight: 700;">
-        Sid&apos;s Portfolio
-      </div>
-
-      <h2 style="color: white; margin-bottom: 0.7rem; font-size: 2rem; font-weight: 800;">
-        Supplier Performance &amp; Spend Intelligence Dashboard
-      </h2>
-
-      <p style="color: #dbeafe; font-size: 1rem; line-height: 1.6; margin-bottom: 0.8rem;">
-        Upload supplier spend or performance data to identify where money is going,
-        classify suppliers, detect rationalization opportunities, estimate savings,
-        and generate procurement next actions.
-      </p>
-
-      <p style="color: #dbeafe; font-size: 1rem; line-height: 1.6;">
-        <strong>Portfolio demo:</strong> Python, Streamlit, Pandas, Plotly, OpenPyXL, and Pytest.
-      </p>
-    </div>
+        <div class="hero-card">
+            <div class="hero-label">Sid Shetty Portfolio Project</div>
+            <div class="hero-title">Supplier Performance Diagnostic Workbench</div>
+            <div class="hero-subtitle">
+                A consulting-style supplier performance and spend diagnostic workbench that converts messy supplier data
+                into supplier risk segmentation, spend-at-risk exposure, contract coverage gaps, QBR talking points,
+                and executive-ready procurement recommendations.
+                <br><br>
+                This tool is designed to mirror the early diagnostic phase of a procurement performance review. It does
+                not just summarize spend; it identifies which suppliers require action, why they were flagged, what
+                business exposure is attached, and what procurement leadership should validate next.
+            </div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
 
-    st.sidebar.header("Upload Data")
+    st.sidebar.header("Data Input")
 
-    st.sidebar.write(
-        "Upload a supplier-level performance file or transaction-level spend file. "
-        "The app maps common column names automatically and explains which analyses are available."
+    input_mode = st.sidebar.radio(
+        "Choose input mode",
+        ["Upload file", "Use demo data"],
     )
 
-    uploaded_file = st.sidebar.file_uploader(
-        "Upload CSV or Excel file",
-        type=["csv", "xlsx", "xls"],
-    )
+    raw_df = None
+    data_source_label = None
 
-    st.sidebar.divider()
-
-    st.sidebar.markdown(
-        """
-        **Recommended fields**
-        - Supplier/vendor name
-        - Description or category
-        - Invoice amount / spend amount
-        - Transaction date
-        - Business unit
-        - Region
-        - Contract status
-        - Payment terms
-        """
-    )
-
-    if uploaded_file is None:
-        st.info(
-            "Upload a CSV or Excel supplier spend file to begin. "
-            "Use the dummy test file we created earlier for your interview demo."
+    if input_mode == "Upload file":
+        uploaded_file = st.sidebar.file_uploader(
+            "Upload supplier spend or performance file",
+            type=["csv", "xlsx", "xls"],
         )
-        return
+
+        if uploaded_file is not None:
+            try:
+                raw_df, data_source_label = load_uploaded_data(uploaded_file)
+            except Exception as error:
+                st.error(f"Unable to read uploaded file: {error}")
+                return
+        else:
+            st.info("Upload a CSV or Excel file, or switch to demo data in the sidebar.")
+            return
+
+    else:
+        demo_type = st.sidebar.selectbox(
+            "Demo dataset",
+            [
+                "Mixed indirect spend supplier portfolio",
+                "Logistics supplier performance",
+                "IT services supplier performance",
+                "MRO supplier performance",
+                "Professional services supplier performance",
+            ],
+        )
+
+        raw_df = build_demo_dataset(demo_type)
+        data_source_label = demo_type
+
+    supplier_match_threshold = st.sidebar.slider(
+        "Supplier fuzzy match threshold",
+        min_value=80,
+        max_value=100,
+        value=90,
+        step=1,
+        help="Higher threshold = stricter matching. Lower threshold = more aggressive grouping.",
+    )
 
     try:
-        raw_data = load_uploaded_data(uploaded_file)
-
-        (
-            supplier_data,
-            category_metrics,
-            readiness_report,
-            mapping_report,
-            date_summary,
-            aggregation_summary,
-        ) = prepare_supplier_data(raw_data)
-
+        results, column_mapping = standardize_columns(raw_df)
     except Exception as error:
         st.error(f"Unable to process the dataset: {error}")
         return
 
-    # Sidebar filters
-    st.sidebar.divider()
-    st.sidebar.header("Filters")
-
-    available_categories = sorted(
-        supplier_data["category"].dropna().astype(str).unique().tolist()
-        if "category" in supplier_data.columns
-        else []
+    results, supplier_normalization_summary = apply_supplier_normalization(
+        results,
+        threshold=supplier_match_threshold,
     )
 
-    selected_categories = st.sidebar.multiselect(
-        "Categories",
-        available_categories,
-        default=available_categories,
+    supplier_summary = calculate_supplier_summary(results)
+    supplier_diagnostics = assign_supplier_archetypes(supplier_summary)
+    spend_risk = calculate_spend_at_risk(supplier_diagnostics)
+    opportunities = create_sourcing_opportunities(results, supplier_diagnostics)
+    action_pipeline = create_action_pipeline(results, supplier_diagnostics, opportunities)
+    data_readiness = calculate_data_readiness(
+        results,
+        supplier_normalization_summary,
+        raw_df.columns.tolist(),
     )
 
-    available_attention_levels = sorted(
-        supplier_data["attention_level"].dropna().astype(str).unique().tolist()
-        if "attention_level" in supplier_data.columns
-        else []
-    )
+    st.sidebar.success(f"Data loaded: {data_source_label}")
+    st.sidebar.metric("Rows analyzed", format_number(len(results)))
+    st.sidebar.metric("Spend analyzed", format_currency(results["annual_spend"].sum()))
 
-    selected_attention_levels = st.sidebar.multiselect(
-        "Attention levels",
-        available_attention_levels,
-        default=available_attention_levels,
-    )
-
-    filtered_supplier_data = supplier_data.copy()
-
-    if selected_categories:
-        filtered_supplier_data = filtered_supplier_data[
-            filtered_supplier_data["category"].astype(str).isin(selected_categories)
-        ]
-
-    if selected_attention_levels and "attention_level" in filtered_supplier_data.columns:
-        filtered_supplier_data = filtered_supplier_data[
-            filtered_supplier_data["attention_level"].astype(str).isin(
-                selected_attention_levels
-            )
-        ]
-
-    filtered_category_metrics = create_category_metrics(filtered_supplier_data)
-
-    classification_summary = summarize_classification_coverage(
-        filtered_supplier_data
-    )
-
-    rationalization_opportunities = create_rationalization_opportunities(
-        filtered_supplier_data
-    )
-
-    opportunity_summary = summarize_opportunity_pipeline(
-        rationalization_opportunities
-    )
-
-    procurement_recommendations = create_procurement_recommendations(
-        rationalization_opportunities
-    )
-
-    (
-        executive_tab,
-        spend_tab,
-        rationalization_tab,
-        savings_tab,
-        methodology_tab,
-    ) = st.tabs(
+    tabs = st.tabs(
         [
-            "1. Executive Summary",
-            "2. Spend Analysis",
-            "3. Rationalization Opportunities",
-            "4. Savings Ideas",
-            "5. Methodology & Data Readiness",
+            "Executive Diagnostic",
+            "Spend Analytics",
+            "Supplier Risk & Performance",
+            "Action Pipeline",
+            "QBR Briefing",
+            "CPO Briefing",
+            "Data Readiness",
         ]
     )
 
-    with executive_tab:
-        st.subheader("Executive procurement summary")
-
-        total_spend = (
-            filtered_supplier_data["annual_spend"].sum()
-            if "annual_spend" in filtered_supplier_data.columns
-            else 0
+    with tabs[0]:
+        render_executive_diagnostic(
+            results,
+            supplier_diagnostics,
+            spend_risk,
+            action_pipeline,
+            data_readiness,
         )
 
-        supplier_count = (
-            filtered_supplier_data["supplier_name"].nunique()
-            if "supplier_name" in filtered_supplier_data.columns
-            else 0
+    with tabs[1]:
+        render_spend_analytics(results)
+
+    with tabs[2]:
+        render_supplier_risk_performance(supplier_diagnostics, spend_risk)
+
+    with tabs[3]:
+        render_action_pipeline(action_pipeline)
+
+    with tabs[4]:
+        render_qbr_briefing(supplier_diagnostics, results)
+
+    with tabs[5]:
+        render_cpo_briefing(
+            supplier_diagnostics,
+            action_pipeline,
+            spend_risk,
+            data_readiness,
         )
 
-        category_count = (
-            filtered_supplier_data["category"].nunique()
-            if "category" in filtered_supplier_data.columns
-            else 0
+    with tabs[6]:
+        render_data_readiness(
+            results,
+            supplier_normalization_summary,
+            data_readiness,
+            column_mapping,
         )
-
-        summary_columns = st.columns(6)
-
-        summary_columns[0].metric(
-            "Total spend analyzed",
-            format_currency(total_spend),
-        )
-
-        summary_columns[1].metric(
-            "Suppliers",
-            format_number(supplier_count),
-        )
-
-        summary_columns[2].metric(
-            "Categories",
-            format_number(category_count),
-        )
-
-        summary_columns[3].metric(
-            "Opportunities found",
-            format_number(opportunity_summary["opportunity_count"]),
-        )
-
-        summary_columns[4].metric(
-            "Savings low",
-            format_currency(opportunity_summary["estimated_savings_low"]),
-        )
-
-        summary_columns[5].metric(
-            "Savings high",
-            format_currency(opportunity_summary["estimated_savings_high"]),
-        )
-
-        st.markdown(
-            f"""
-            <div class="insight-box">
-            The highest-value opportunity area identified from the uploaded data is 
-            <strong>{opportunity_summary["top_category"]}</strong>. Savings estimates are directional and should be validated
-            through sourcing events, supplier negotiations, and contract review.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.divider()
-
-        left_chart_column, right_chart_column = st.columns(2)
-
-        with left_chart_column:
-            show_chart_or_message(
-                create_top_categories_chart(filtered_supplier_data),
-                "Category spend chart is not available for this file.",
-                key="executive_top_categories_chart",
-            )
-
-        with right_chart_column:
-            show_chart_or_message(
-                create_opportunity_savings_chart(rationalization_opportunities),
-                "Savings opportunity chart is not available yet.",
-                key="executive_opportunity_savings_chart",
-            )
-
-        st.divider()
-
-        st.subheader("Top recommended procurement initiatives")
-
-        for index, recommendation in enumerate(
-                procurement_recommendations[:3],
-                start=1,
-        ):
-            render_recommendation_card(
-                recommendation,
-                index,
-            )
-
-            # st.markdown(
-            #     f"""
-            #     <div class="section-card">
-            #         <h4>{index}. {recommendation["recommendation"]}</h4>
-            #         <p><strong>Rationale:</strong> {recommendation["why_it_matters"]}</p>
-            #         <p><strong>Procurement action:</strong> {recommendation["next_action"]}</p>
-            #         <p>
-            #             <strong>Impact:</strong> {recommendation["estimated_savings_range"]} potential savings &nbsp; | &nbsp;
-            #             <strong>{recommendation["priority"]}</strong> priority &nbsp; | &nbsp;
-            #             {recommendation["difficulty"]} difficulty
-            #         </p>
-            #     </div>
-            #     """,
-            #     unsafe_allow_html=True,
-            # )
-
-    with spend_tab:
-        st.subheader("Spend analysis")
-
-        spend_columns = st.columns(4)
-
-        spend_columns[0].metric(
-            "Total spend",
-            format_currency(filtered_supplier_data["annual_spend"].sum()),
-        )
-
-        spend_columns[1].metric(
-            "Suppliers",
-            format_number(filtered_supplier_data["supplier_name"].nunique()),
-        )
-
-        spend_columns[2].metric(
-            "Categories",
-            format_number(filtered_supplier_data["category"].nunique()),
-        )
-
-        spend_columns[3].metric(
-            "Avg spend / supplier",
-            format_currency(
-                filtered_supplier_data["annual_spend"].sum()
-                / max(filtered_supplier_data["supplier_name"].nunique(), 1)
-            ),
-        )
-
-        st.divider()
-
-        chart_column_1, chart_column_2 = st.columns(2)
-
-        with chart_column_1:
-            show_chart_or_message(
-                create_top_suppliers_chart(filtered_supplier_data),
-                "Top supplier chart is not available for this file.",
-                key="spend_top_suppliers_chart",
-            )
-
-        with chart_column_2:
-            show_chart_or_message(
-                create_top_categories_chart(filtered_supplier_data),
-                "Top category chart is not available for this file.",
-                key="spend_top_categories_chart",
-            )
-
-        st.divider()
-
-        chart_column_3, chart_column_4 = st.columns(2)
-
-        with chart_column_3:
-            show_chart_or_message(
-                create_supplier_count_by_category_chart(filtered_supplier_data),
-                "Supplier count by category chart is not available for this file.",
-                key="spend_supplier_count_by_category_chart",
-            )
-
-        with chart_column_4:
-            show_chart_or_message(
-                create_monthly_spend_trend_chart(filtered_supplier_data),
-                "Spend trend chart is not available because usable date fields were not found.",
-                key="spend_monthly_trend_chart",
-            )
-
-        st.divider()
-
-        chart_column_5, chart_column_6 = st.columns(2)
-
-        with chart_column_5:
-            show_chart_or_message(
-                create_spend_by_region_chart(filtered_supplier_data),
-                "Spend by region chart is not available for this file.",
-                key="spend_by_region_chart",
-            )
-
-        with chart_column_6:
-            show_chart_or_message(
-                create_spend_by_business_unit_chart(filtered_supplier_data),
-                "Spend by business unit chart is not available for this file.",
-                key="spend_by_business_unit_chart",
-            )
-
-        st.divider()
-
-        with st.expander("View top suppliers table"):
-            top_suppliers = (
-                filtered_supplier_data.groupby("supplier_name", dropna=False)[
-                    "annual_spend"
-                ]
-                .sum()
-                .reset_index()
-                .sort_values(by="annual_spend", ascending=False)
-                .head(20)
-            )
-
-            st.dataframe(
-                make_display_table(top_suppliers),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        with st.expander("View top categories table"):
-            top_categories = (
-                filtered_supplier_data.groupby("category", dropna=False)[
-                    "annual_spend"
-                ]
-                .sum()
-                .reset_index()
-                .sort_values(by="annual_spend", ascending=False)
-                .head(20)
-            )
-
-            st.dataframe(
-                make_display_table(top_categories),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-    with rationalization_tab:
-        st.subheader("Supplier rationalization opportunities")
-
-        st.markdown(
-            """
-            <div class="insight-box">
-            This view identifies categories where supplier consolidation, tail-spend cleanup, or contract coverage review may create procurement value.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        if rationalization_opportunities.empty:
-            st.warning(
-                "No rationalization opportunities were detected from the available data."
-            )
-        else:
-            rationalization_columns = st.columns(4)
-
-            rationalization_columns[0].metric(
-                "Opportunities",
-                format_number(len(rationalization_opportunities)),
-            )
-
-            rationalization_columns[1].metric(
-                "High priority",
-                format_number(opportunity_summary["high_priority_count"]),
-            )
-
-            rationalization_columns[2].metric(
-                "Low savings estimate",
-                format_currency(opportunity_summary["estimated_savings_low"]),
-            )
-
-            rationalization_columns[3].metric(
-                "High savings estimate",
-                format_currency(opportunity_summary["estimated_savings_high"]),
-            )
-
-            st.divider()
-
-            left_opportunity_chart, right_opportunity_chart = st.columns(2)
-
-            with left_opportunity_chart:
-                show_chart_or_message(
-                    create_opportunity_savings_chart(rationalization_opportunities),
-                    "Savings by category chart is not available.",
-                    key="rationalization_opportunity_savings_chart",
-                )
-
-            with right_opportunity_chart:
-                show_chart_or_message(
-                    create_opportunity_type_chart(rationalization_opportunities),
-                    "Opportunity mix chart is not available.",
-                    key="rationalization_opportunity_type_chart",
-                )
-
-            st.divider()
-
-            show_chart_or_message(
-                create_priority_chart(rationalization_opportunities),
-                "Priority chart is not available.",
-                key="rationalization_priority_chart",
-            )
-
-            st.divider()
-
-            st.subheader("Prioritized opportunity pipeline")
-
-            opportunity_display_columns = [
-                "priority",
-                "opportunity_type",
-                "category",
-                "current_suppliers",
-                "suggested_supplier_reduction",
-                "suggested_target_suppliers",
-                "total_spend",
-                "estimated_savings_range",
-                "rationale",
-                "next_action",
-            ]
-
-            available_opportunity_display_columns = [
-                column
-                for column in opportunity_display_columns
-                if column in rationalization_opportunities.columns
-            ]
-
-            st.dataframe(
-                prepare_opportunity_display_table(
-                    rationalization_opportunities[
-                        available_opportunity_display_columns
-                    ]
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-    with savings_tab:
-        st.subheader("Savings ideas and procurement actions")
-
-        savings_columns = st.columns(3)
-
-        savings_columns[0].metric(
-            "Directional savings low",
-            format_currency(opportunity_summary["estimated_savings_low"]),
-        )
-
-        savings_columns[1].metric(
-            "Directional savings high",
-            format_currency(opportunity_summary["estimated_savings_high"]),
-        )
-
-        savings_columns[2].metric(
-            "High-priority opportunities",
-            format_number(opportunity_summary["high_priority_count"]),
-        )
-
-        st.markdown(
-            """
-            <div class="warning-box">
-            Savings estimates are directional and should be validated through sourcing events,
-            supplier negotiations, demand analysis, and contract review.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.divider()
-
-        left_savings_chart, right_savings_chart = st.columns(2)
-
-        with left_savings_chart:
-            show_chart_or_message(
-                create_opportunity_savings_chart(rationalization_opportunities),
-                "Savings chart is not available.",
-                key="savings_opportunity_savings_chart",
-            )
-
-        with right_savings_chart:
-            show_chart_or_message(
-                create_priority_chart(rationalization_opportunities),
-                "Priority chart is not available.",
-                key="savings_priority_chart",
-            )
-
-        st.divider()
-
-        st.subheader("Recommended savings initiatives")
-
-        for index, recommendation in enumerate(
-                procurement_recommendations,
-                start=1,
-        ):
-            render_recommendation_card(
-                recommendation,
-                index,
-            )
-
-    with methodology_tab:
-        st.subheader("What this project demonstrates")
-
-        st.write(
-            """
-            This project is designed as a realistic supplier analytics workflow rather than a static dashboard.
-            It handles messy uploaded files, maps common procurement column names, checks readiness before analysis,
-            classifies spend using transparent rules, parses transaction dates, aggregates supplier/category rows,
-            identifies rationalization opportunities, estimates savings directionally, and produces management-style recommendations.
-            """
-        )
-
-        st.subheader("Core capabilities")
-
-        st.markdown(
-            """
-            - **Flexible file ingestion:** accepts CSV and Excel files with varied column names.
-            - **Column mapping:** maps aliases like Vendor Name, Invoice Amount, OTD %, PO Number, and Cost Center to canonical fields.
-            - **Data readiness:** explains which analyses are available, limited, or unavailable.
-            - **Spend classification:** uses a built-in taxonomy and scored rules-based classification.
-            - **Date handling:** parses invoice dates and creates year, quarter, and month fields.
-            - **Supplier/category aggregation:** supports transaction-level and supplier-level files.
-            - **Rationalization logic:** identifies fragmented categories, tail spend, and contract coverage gaps.
-            - **Savings estimation:** creates directional savings ranges based on simple procurement rules.
-            - **Executive recommendations:** generates plain-English next actions for procurement teams.
-            - **Downloadable outputs:** exports CSV and Excel outputs for further review.
-            """
-        )
-
-        st.subheader("Savings methodology")
-
-        st.markdown(
-            """
-            Savings estimates are directional and rule-based:
-
-            - Fragmented category: typically 3%–12% depending on supplier count.
-            - Tail spend cleanup: typically 3%–8%.
-            - No contract coverage: typically 4%–10%.
-            - Supplier consolidation: typically 4%–10%.
-
-            These are not guaranteed savings. They are intended to prioritize where procurement teams should investigate further.
-            """
-        )
-
-        st.divider()
-
-        st.subheader("Downloads")
-
-        excel_file = create_excel_download(
-            {
-                "Supplier Analysis": filtered_supplier_data,
-                "Category Metrics": filtered_category_metrics,
-                "Opportunities": rationalization_opportunities,
-                "Column Mapping": mapping_report,
-            }
-        )
-
-        st.download_button(
-            label="Download Excel analysis workbook",
-            data=excel_file,
-            file_name="supplier_spend_intelligence_analysis.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-        st.download_button(
-            label="Download supplier analysis CSV",
-            data=filtered_supplier_data.to_csv(index=False).encode("utf-8"),
-            file_name="supplier_analysis.csv",
-            mime="text/csv",
-        )
-
-        st.divider()
-
-        st.subheader("Data readiness details")
-
-        with st.expander("View data readiness diagnostics"):
-            st.write(f"Readiness status: {readiness_report['analysis_status']}")
-            st.write(f"Detected file type: {readiness_report['input_file_type']}")
-            st.write(f"Mapped columns: {readiness_report['mapped_column_count']}")
-            st.write(f"Unmapped columns: {readiness_report['unmapped_column_count']}")
-            st.write(f"Date coverage: {date_summary['date_coverage_pct']}%")
-            st.write(f"Aggregation grain: {aggregation_summary['time_grain']}")
-
-            st.dataframe(
-                make_display_table(readiness_report["analysis_capabilities"]),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        with st.expander("View classification sample"):
-            classification_columns_to_show = [
-                "supplier_name",
-                "description",
-                "annual_spend",
-                "invoice_date",
-                "invoice_month",
-                "taxonomy_level_1",
-                "taxonomy_level_2",
-                "classification_confidence",
-                "classification_score",
-                "needs_classification_review",
-            ]
-
-            available_classification_columns = [
-                column
-                for column in classification_columns_to_show
-                if column in filtered_supplier_data.columns
-            ]
-
-            st.dataframe(
-                make_display_table(
-                    filtered_supplier_data[
-                        available_classification_columns
-                    ].head(20)
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        with st.expander("View column mapping report"):
-            st.dataframe(
-                make_display_table(mapping_report),
-                use_container_width=True,
-                hide_index=True,
-            )
 
 
 if __name__ == "__main__":
