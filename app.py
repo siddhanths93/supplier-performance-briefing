@@ -512,60 +512,291 @@ def build_demo_dataset(demo_type):
 # ============================================================
 
 KNOWN_SUPPLIER_ALIASES = {
+    # Major curated aliases / acronym cases
     "ibm": "IBM",
     "i b m": "IBM",
     "international business machines": "IBM",
     "international business machines corporation": "IBM",
+
+    "ge": "General Electric",
+    "general electric": "General Electric",
+
+    "hp": "HP Inc.",
+    "hp inc": "HP Inc.",
+    "hewlett packard": "HP Inc.",
+    "hewlett packard company": "HP Inc.",
+
     "aws": "Amazon / AWS",
     "amazon web services": "Amazon / AWS",
+    "amazon web services inc": "Amazon / AWS",
     "amazon": "Amazon / AWS",
+
     "microsoft": "Microsoft",
     "microsoft corp": "Microsoft",
     "microsoft corporation": "Microsoft",
     "msft": "Microsoft",
     "microsoft azure": "Microsoft",
+
     "google": "Google",
     "google cloud": "Google",
+    "google llc": "Google",
     "alphabet": "Google",
+
     "dhl": "DHL",
+    "d h l": "DHL",
     "dhl express": "DHL",
     "dhl global forwarding": "DHL",
+
     "fedex": "FedEx",
     "fedex corp": "FedEx",
+    "fedex corporation": "FedEx",
     "federal express": "FedEx",
+
     "ups": "UPS",
     "united parcel service": "UPS",
+
     "oracle": "Oracle",
     "sap": "SAP",
+
     "grainger": "Grainger",
     "fastenal": "Fastenal",
+
     "staples": "Staples",
     "staples inc": "Staples",
     "office depot": "Office Depot",
 }
 
-COMMON_SUFFIXES = [
-    "inc", "incorporated", "llc", "ltd", "limited", "corp", "corporation",
-    "co", "company", "plc", "lp", "llp", "gmbh", "services", "service",
-    "group", "holdings",
+LEGAL_SUFFIXES = {
+    "inc",
+    "incorporated",
+    "llc",
+    "ltd",
+    "limited",
+    "corp",
+    "corporation",
+    "co",
+    "company",
+    "plc",
+    "lp",
+    "llp",
+    "sa",
+    "s a",
+    "bv",
+    "b v",
+    "gmbh",
+    "g m b h",
+    "pte",
+    "pte ltd",
+    "ag",
+    "na",
+    "n a",
+}
+
+ABBREVIATION_MAP = {
+    "mfg": "manufacturing",
+    "intl": "international",
+    "int": "international",
+    "svcs": "services",
+    "svc": "services",
+    "tech": "technology",
+    "technologies": "technology",
+    "sys": "systems",
+    "bros": "brothers",
+    "assoc": "associates",
+    "ind": "industrial",
+    "elec": "electric",
+}
+
+GENERIC_TOKENS = {
+    "global",
+    "national",
+    "international",
+    "group",
+    "holdings",
+    "partners",
+    "services",
+    "service",
+    "solutions",
+    "systems",
+    "technology",
+    "technologies",
+    "resources",
+    "industries",
+    "industrial",
+    "supply",
+    "supplies",
+    "logistics",
+    "consulting",
+    "company",
+    "corporation",
+    "inc",
+    "llc",
+    "ltd",
+    "co",
+}
+
+STATUS_PATTERNS = [
+    r"\(old\)",
+    r"\(inactive\)",
+    r"\(do not use\)",
+    r"\(duplicate\)",
+    r"-\s*old\b",
+    r"-\s*inactive\b",
+    r"-\s*do not use\b",
+    r"-\s*duplicate of.*$",
+    r"\[supplier_id.*?\]",
+    r"\[sup-\d+\]",
+    r"\bsupplier_id\s*sup-\d+\b",
+    r"\bsup-\d+\b",
 ]
 
 
+def strip_status_metadata(name: str) -> str:
+    cleaned = str(name)
+
+    for pattern in STATUS_PATTERNS:
+        cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE)
+
+    return cleaned
+
+
+def normalize_ampersand(name: str) -> str:
+    return re.sub(r"\s*&\s*", " and ", name)
+
+
+def expand_abbreviations(tokens: list[str]) -> list[str]:
+    expanded = []
+
+    for token in tokens:
+        expanded.append(ABBREVIATION_MAP.get(token, token))
+
+    return expanded
+
+
 def clean_supplier_name(name):
+    """
+    Creates a normalized supplier name for supplier-family matching.
+
+    Handles:
+    - case folding
+    - punctuation
+    - ampersand normalization
+    - legal suffix removal
+    - abbreviation expansion
+    - metadata stripping
+    - whitespace cleanup
+    """
     if pd.isna(name):
         return ""
 
     cleaned = str(name).lower().strip()
+    cleaned = strip_status_metadata(cleaned)
+    cleaned = normalize_ampersand(cleaned)
+
+    # Replace punctuation and separators with spaces
     cleaned = re.sub(r"[^a-z0-9\s]", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
-    words = [word for word in cleaned.split() if word not in COMMON_SUFFIXES]
-    return " ".join(words).strip()
+    tokens = cleaned.split()
+    tokens = expand_abbreviations(tokens)
+
+    # Remove legal suffixes after abbreviation normalization
+    tokens = [token for token in tokens if token not in LEGAL_SUFFIXES]
+
+    cleaned = " ".join(tokens)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    return cleaned
+
+
+def compact_supplier_key(name):
+    """
+    Compact key catches cases like:
+    D.H.L. -> dhl
+    3 M Company -> 3m
+    A & P Electric -> ap electric
+    """
+    cleaned = clean_supplier_name(name)
+    compact = re.sub(r"\s+", "", cleaned)
+    return compact
 
 
 def alias_lookup(name):
     cleaned = clean_supplier_name(name)
-    return KNOWN_SUPPLIER_ALIASES.get(cleaned)
+    compact = compact_supplier_key(name)
+
+    if cleaned in KNOWN_SUPPLIER_ALIASES:
+        return KNOWN_SUPPLIER_ALIASES[cleaned]
+
+    if compact in KNOWN_SUPPLIER_ALIASES:
+        return KNOWN_SUPPLIER_ALIASES[compact]
+
+    return None
+
+
+def meaningful_tokens(name):
+    tokens = set(clean_supplier_name(name).split())
+    return {token for token in tokens if token not in GENERIC_TOKENS and len(token) > 1}
+
+
+def has_enough_meaningful_overlap(name_a, name_b):
+    """
+    Prevents false positives like:
+    ABC Logistics vs ABC Consulting Group
+    Global Tech Partners vs Global Marketing Partners
+
+    Rule:
+    - If there is only one shared meaningful token, flag for review instead of auto-merge.
+    - If there are 2+ shared meaningful tokens, auto-merge can be considered.
+    """
+    tokens_a = meaningful_tokens(name_a)
+    tokens_b = meaningful_tokens(name_b)
+
+    overlap = tokens_a.intersection(tokens_b)
+
+    if len(overlap) >= 2:
+        return True
+
+    # Allow exact compact match even with one token, e.g., DHL / D.H.L.
+    if compact_supplier_key(name_a) == compact_supplier_key(name_b):
+        return True
+
+    return False
+
+
+def supplier_match_decision(name_a, name_b, score, threshold=90):
+    """
+    Converts a fuzzy score into a practical consulting decision:
+    - AUTO_MERGE
+    - FLAG_FOR_REVIEW
+    - DO_NOT_MERGE
+    """
+
+    clean_a = clean_supplier_name(name_a)
+    clean_b = clean_supplier_name(name_b)
+    compact_a = compact_supplier_key(name_a)
+    compact_b = compact_supplier_key(name_b)
+
+    # Exact normalized or compact match should auto-merge.
+    if clean_a == clean_b or compact_a == compact_b:
+        return "AUTO_MERGE"
+
+    # Substring / truncation handling
+    if len(clean_a) >= 8 and len(clean_b) >= 8:
+        if clean_a.startswith(clean_b) or clean_b.startswith(clean_a):
+            return "AUTO_MERGE"
+
+    # High score but weak meaningful overlap can be a false-positive trap.
+    if score >= threshold:
+        if has_enough_meaningful_overlap(name_a, name_b):
+            return "AUTO_MERGE"
+        return "FLAG_FOR_REVIEW"
+
+    # Borderline scores should be reviewed, not auto-merged.
+    if score >= threshold - 5:
+        return "FLAG_FOR_REVIEW"
+
+    return "DO_NOT_MERGE"
 
 
 def choose_canonical_supplier(original_names, spend_by_supplier):
@@ -574,6 +805,7 @@ def choose_canonical_supplier(original_names, spend_by_supplier):
     if not valid:
         return "Unknown Supplier"
 
+    # Prefer the highest-spend version because it is usually the most relevant ERP naming variant.
     sorted_by_spend = sorted(
         valid,
         key=lambda supplier: spend_by_supplier.get(supplier, 0),
@@ -584,6 +816,19 @@ def choose_canonical_supplier(original_names, spend_by_supplier):
 
 
 def apply_supplier_normalization(df, threshold=90):
+    """
+    Adds:
+    - original_supplier_name
+    - normalized_supplier_name
+
+    Also returns supplier_normalization_summary with:
+    - variants
+    - spend
+    - match score
+    - match method
+    - recommended review action
+    """
+
     if df.empty or "supplier_name" not in df.columns:
         df["original_supplier_name"] = "Unknown Supplier"
         df["normalized_supplier_name"] = "Unknown Supplier"
@@ -603,70 +848,131 @@ def apply_supplier_normalization(df, threshold=90):
     mapping = {}
     match_scores = {}
     match_methods = {}
+    review_actions = {}
 
     unresolved = []
 
+    # Step 1: Curated alias lookup first
     for supplier in original_suppliers:
         alias = alias_lookup(supplier)
+
         if alias:
             mapping[supplier] = alias
             match_scores[supplier] = 100
             match_methods[supplier] = "Known alias"
+            review_actions[supplier] = "AUTO_MERGE"
         else:
             unresolved.append(supplier)
 
+    # Step 2: Build cleaned-name index
     cleaned_to_originals = defaultdict(list)
 
     for supplier in unresolved:
         cleaned = clean_supplier_name(supplier)
+
         if cleaned:
             cleaned_to_originals[cleaned].append(supplier)
         else:
             mapping[supplier] = "Unknown Supplier"
             match_scores[supplier] = 0
             match_methods[supplier] = "Missing supplier name"
+            review_actions[supplier] = "FLAG_FOR_REVIEW"
 
     cleaned_names = list(cleaned_to_originals.keys())
     assigned = set()
 
-    for cleaned in cleaned_names:
-        if cleaned in assigned:
+    # Step 3: Fuzzy matching with decision logic
+    for cleaned_name in cleaned_names:
+        if cleaned_name in assigned:
             continue
 
-        matches = process.extract(
-            cleaned,
+        candidate_matches = process.extract(
+            cleaned_name,
             cleaned_names,
             scorer=fuzz.token_sort_ratio,
-            score_cutoff=threshold,
+            score_cutoff=threshold - 5,
             limit=None,
         )
 
-        matched_cleaned_names = [match[0] for match in matches]
-        matched_scores = [match[1] for match in matches]
+        auto_merge_cleaned_names = []
+        review_cleaned_names = []
+        scores = []
 
-        for match_name in matched_cleaned_names:
-            assigned.add(match_name)
+        base_original = cleaned_to_originals[cleaned_name][0]
+
+        for matched_cleaned_name, score, _ in candidate_matches:
+            matched_original = cleaned_to_originals[matched_cleaned_name][0]
+            decision = supplier_match_decision(
+                base_original,
+                matched_original,
+                score,
+                threshold=threshold,
+            )
+
+            if decision == "AUTO_MERGE":
+                auto_merge_cleaned_names.append(matched_cleaned_name)
+                scores.append(score)
+            elif decision == "FLAG_FOR_REVIEW":
+                review_cleaned_names.append(matched_cleaned_name)
+
+        if cleaned_name not in auto_merge_cleaned_names:
+            auto_merge_cleaned_names.append(cleaned_name)
+            scores.append(100)
+
+        for matched_name in auto_merge_cleaned_names:
+            assigned.add(matched_name)
 
         original_group = []
-        for match_name in matched_cleaned_names:
-            original_group.extend(cleaned_to_originals[match_name])
+
+        for matched_name in auto_merge_cleaned_names:
+            original_group.extend(cleaned_to_originals[matched_name])
 
         canonical = choose_canonical_supplier(original_group, spend_by_supplier)
-        average_score = round(sum(matched_scores) / len(matched_scores), 1) if matched_scores else 0
+        average_score = round(sum(scores) / len(scores), 1) if scores else 0
 
         for supplier in original_group:
             mapping[supplier] = canonical
             match_scores[supplier] = average_score
             match_methods[supplier] = "Fuzzy match" if len(original_group) > 1 else "No close match"
+            review_actions[supplier] = "AUTO_MERGE" if len(original_group) > 1 else "NO_ACTION"
 
-    data["normalized_supplier_name"] = data["original_supplier_name"].map(mapping).fillna(data["original_supplier_name"])
+        # Review candidates should stay separate but be visible in methodology.
+        for review_cleaned_name in review_cleaned_names:
+            if review_cleaned_name in assigned:
+                continue
 
+            review_originals = cleaned_to_originals[review_cleaned_name]
+
+            for supplier in review_originals:
+                mapping[supplier] = supplier
+                match_scores[supplier] = threshold - 1
+                match_methods[supplier] = f"Possible fuzzy match to {canonical}"
+                review_actions[supplier] = "FLAG_FOR_REVIEW"
+
+            assigned.add(review_cleaned_name)
+
+    data["normalized_supplier_name"] = (
+        data["original_supplier_name"]
+        .map(mapping)
+        .fillna(data["original_supplier_name"])
+    )
+
+    # Step 4: Create summary table
     rows = []
 
     for family, family_df in data.groupby("normalized_supplier_name", dropna=False):
         variants = sorted(family_df["original_supplier_name"].dropna().astype(str).unique())
+
         scores = [match_scores.get(variant, 0) for variant in variants]
         methods = sorted(set(match_methods.get(variant, "Unknown") for variant in variants))
+        actions = sorted(set(review_actions.get(variant, "NO_ACTION") for variant in variants))
+
+        if len(variants) > 1:
+            family_action = "AUTO_MERGE"
+        elif "FLAG_FOR_REVIEW" in actions:
+            family_action = "FLAG_FOR_REVIEW"
+        else:
+            family_action = actions[0] if actions else "NO_ACTION"
 
         rows.append(
             {
@@ -676,16 +982,19 @@ def apply_supplier_normalization(df, threshold=90):
                 "total_spend": family_df["annual_spend"].sum(),
                 "average_match_score": round(sum(scores) / len(scores), 1) if scores else 0,
                 "match_method": ", ".join(methods),
+                "recommended_review_action": family_action,
             }
         )
 
     summary = pd.DataFrame(rows)
 
     if not summary.empty:
-        summary = summary.sort_values(["total_spend", "variant_count"], ascending=[False, False])
+        summary = summary.sort_values(
+            ["total_spend", "variant_count"],
+            ascending=[False, False],
+        )
 
     return data, summary
-
 
 # ============================================================
 # SUPPLIER DIAGNOSTIC ENGINE
